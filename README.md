@@ -125,7 +125,7 @@ pipeline/              ingest client, normalizer, tests
 data/regions.json      area of interest list, shared by pipeline and API
 data/raw/              cached API responses (gitignored)
 data/processed/        Parquet artifacts (gitignored)
-docs/                  problem definition, plain-language explainer, diagrams
+docs/                  problem definition in Spanish and English, diagrams
 scripts/               timed probe and rate-limit budget calculator
 ```
 
@@ -182,9 +182,8 @@ worse than an honest error.
 
 | Document | Language | Purpose |
 |---|---|---|
-| [`docs/problema-explicado.md`](docs/problema-explicado.md) | Spanish | the problem in plain words, with diagrams; start here |
-| [`docs/problema.md`](docs/problema.md) | Spanish | canonical definition: method, data, requirements, risks, schedule |
-| [`docs/problem.md`](docs/problem.md) | English | mirror of the canonical document for the submission |
+| [`docs/problema.md`](docs/problema.md) | Spanish | canonical document: the problem in plain words, method, data, requirements, risks, schedule |
+| [`docs/problem.md`](docs/problem.md) | English | full mirror of the canonical document, for the judges and the submission |
 
 ## 10. Attribution
 
