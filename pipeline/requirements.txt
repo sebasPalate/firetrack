@@ -1,0 +1,4 @@
+# Pipeline dependencies (ingest + harmonization).
+requests>=2.32
+pandas>=2.2
+pyarrow>=16

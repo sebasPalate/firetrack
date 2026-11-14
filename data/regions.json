@@ -1,0 +1,59 @@
+{
+  "_comment": "Proposed default AOIs. Track B and C own the final list and the justification text. bbox = [west, south, east, north].",
+  "regions": [
+    {
+      "id": "chaco",
+      "name": "Gran Chaco (AR / BO / PY)",
+      "bbox": [-63.5, -31.5, -57.5, -19.5],
+      "why": "Local impact story: the 2020-2022 Chaco fire seasons and the CONAE photo credit in the challenge brief."
+    },
+    {
+      "id": "amazonia_br",
+      "name": "Brazilian Amazon (deforestation arc)",
+      "bbox": [-73.0, -13.0, -49.0, 3.0],
+      "why": "The best-known seasonal fire signal on Earth, with a long MODIS record and a well-documented 2019 anomaly."
+    },
+    {
+      "id": "cerrado",
+      "name": "Cerrado",
+      "bbox": [-58.0, -24.0, -42.0, -8.0],
+      "why": "Fire-adapted savanna with strong wet/dry seasonality and heavy agricultural burning."
+    },
+    {
+      "id": "california",
+      "name": "California",
+      "bbox": [-124.5, 32.5, -114.0, 42.0],
+      "why": "High-profile wildfire regime with a shift from summer to year-round fire in the record."
+    },
+    {
+      "id": "iberia",
+      "name": "Iberian Peninsula",
+      "bbox": [-10.0, 35.5, 4.0, 44.0],
+      "why": "Compact Mediterranean fire regime, dense observations, easy to explain to a European audience."
+    },
+    {
+      "id": "australia_se",
+      "name": "South-East Australia",
+      "bbox": [140.0, -39.0, 154.0, -24.0],
+      "why": "The 2019-20 Black Summer is the cleanest cross-sensor validation event available."
+    },
+    {
+      "id": "siberia",
+      "name": "Eastern Siberia",
+      "bbox": [60.0, 50.0, 140.0, 70.0],
+      "why": "Boreal fire with a strong recent trend and a short ice-free season; tests the harmonization where MODIS struggles."
+    },
+    {
+      "id": "sahel",
+      "name": "Sahel",
+      "bbox": [-17.0, 12.0, 25.0, 20.0],
+      "why": "Agricultural burning calendar dominated by small, short-lived fires that VIIRS sees and MODIS often misses."
+    },
+    {
+      "id": "borneo",
+      "name": "Borneo",
+      "bbox": [108.0, -4.5, 119.0, 7.0],
+      "why": "Peat fires and land-clearing, with a very different detection profile from crown fires."
+    }
+  ]
+}

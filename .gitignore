@@ -1,0 +1,24 @@
+# Secrets
+.env
+.env.local
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Data: raw responses and Parquet are regenerated from scripts, never committed
+data/raw/
+data/processed/**/*.parquet
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+.vercel/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+*.log

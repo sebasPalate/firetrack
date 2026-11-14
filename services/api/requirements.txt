@@ -1,0 +1,5 @@
+# Read-only analytics API.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+duckdb>=1.1
+pyarrow>=16
