@@ -2,7 +2,9 @@
 
 **Evento:** NASA Space Apps Challenge 2026
 **Equipo:** 3 personas — ingeniería de software (dev), ingeniería mecánica, ingeniería industrial
-**Ventana real:** sábado 11:00 → domingo 17:00 (30 h de reloj, ~21 h de trabajo efectivo)
+**Ventana real:** sábado 11:00 → domingo 12:00 (25 h de reloj); código congelado el domingo 11:30.
+**Cierre de entrega:** domingo 23:59. El envío se hace al mediodía para no depender de un último deploy;
+si el cierre real resulta ser 23:59, el margen de la tarde queda como colchón.
 **Estado:** definición del problema. El esqueleto de código existe; no hay datos procesados todavía.
 **Idioma:** documento de trabajo del equipo. La entrega, la presentación y el README final van en inglés.
 
@@ -10,8 +12,10 @@
 > `docs/problem.md` es la versión en inglés para el jurado y se regenera desde acá antes del cierre.
 > Si hay divergencia, manda este.
 >
-> Este documento integra el aporte del equipo en `FIRST EXPLANATION` (ver §16) con la verificación
-> técnica hecha sobre las fuentes de NASA.
+> Para una introducción sin jerga: [`problema-explicado.md`](problema-explicado.md).
+>
+> Este documento integra los aportes del equipo (ver §16) con la verificación técnica hecha sobre las
+> fuentes de NASA.
 
 ---
 
@@ -28,6 +32,18 @@ agrícolas). Pero ese registro está dividido entre dos sensores que no se puede
 
 La consecuencia operativa es concreta: hoy nadie puede responder con honestidad "¿este mes fue
 inusualmente activo?" sobre la serie combinada. El salto de 2012 es del instrumento, no del territorio.
+
+### 1.1 Qué contamos: un foco no es un incendio
+
+El satélite no ve incendios. Ve **píxeles más calientes de lo normal**, y cada uno cuenta como un foco.
+Un incendio grande ocupa decenas de píxeles; una quema pequeña de rastrojo, uno o ninguno. Todo el
+lenguaje del producto depende de esta distinción: la app nunca dice "340 incendios", dice índice de
+actividad. Si el jurado o el usuario lee "incendios", el número es falso.
+
+En un píxel MODIS entran ~7 píxeles VIIRS (1000/375 ≈ 2,67; 2,67² ≈ 7,1). Un incendio de 1 km² da 1 foco
+en MODIS y ~7 en VIIRS, y las quemas que VIIRS ve y MODIS no ven suman todavía más diferencia.
+
+Detalle pedagógico en [`problema-explicado.md`](problema-explicado.md) §1–§2.
 
 ## 2. Lo que piden (en dos fases)
 
@@ -97,6 +113,15 @@ Los conteos crudos de hotspots son un artefacto del instrumento, no del fuego:
 | Inicio del registro | nov 2000 | ene 2012 |
 | Campo de confianza | `confidence` 0–100 (numérico) | `confidence` l / n / h (categórico) |
 | Detecciones efectivas | menos, píxeles más gruesos | del orden de 3–10× más por el mismo complejo de fuego `[MEDIR]` |
+
+El salto no es un artefacto menor. Sin ajuste, la serie se dispara en 2012, otra vez en 2018 y otra vez en
+2023, cada vez que entra un satélite VIIRS:
+
+![Conteos sin ajustar frente al índice armonizado, 2001–2026](img/salto_2012.svg)
+
+Y el mismo fuego se reparte distinto según el tamaño del píxel, que es la causa física del salto:
+
+![Esquema de píxeles MODIS de 1 km frente a VIIRS de 375 m sobre el mismo incendio](img/pixeles_modis_viirs.svg)
 
 ### 4.1 Estrategias candidatas
 
@@ -237,7 +262,7 @@ reciente; armonización píxel a píxel.
 Por qué los no-devs tienen trabajo real: el reto se gana o se pierde en **credibilidad del método y
 comunicación**, no en CRUD.
 
-## 11. Cronograma (30 h de reloj)
+## 11. Cronograma (25 h de reloj hasta el congelamiento)
 
 | Bloque | Horario | Objetivo | Dueño |
 |---|---|---|---|
@@ -247,19 +272,20 @@ comunicación**, no en CRUD.
 | **B2b Paralelo** | Sáb 15:00–21:00 | `docs/method.md` y eventos de validación / requisitos congelados y guion | B / C |
 | **Cena + sync (G1)** | Sáb 21:00–22:00 | revisión de puerta | Todos |
 | **B3 Núcleo de la app** | Sáb 22:00–Dom 02:00 | AOI + rango → calendario + mediana con datos reales | A |
-| **Descanso** | Dom 02:00–08:00 | dormir, obligatorio | Todos |
-| **B4 Validación + QA** | Dom 08:00–12:00 | S10 validado, CSV, panel de procedencia, QA ejecutada | B/C + A |
-| **B5 Pulido + deploy** | Dom 12:00–15:00 | estacionalidad, mapa, accesibilidad, URL pública | A |
-| **B6 Entrega** | Dom 15:00–16:30 | video, README, formulario, ensayo | C |
-| **Margen** | Dom 16:30–17:00 | buffer, nada nuevo | Todos |
+| **Descanso** | Dom 02:00–07:00 | dormir, obligatorio | Todos |
+| **B4 Validación + QA** | Dom 07:00–10:00 | S10 validado, CSV, procedencia, QA ejecutada | B/C + A |
+| **B5 Entrega** | Dom 10:00–11:30 | video, README, formulario, ensayo | C |
+| **G4 Congelamiento** | Dom 11:30 | código cerrado, no se toca más | Todos |
+| **Envío** | Dom 11:30–12:00 | subir y confirmar recepción | C |
+| **Colchón** | Dom 12:00–23:59 | solo si el cierre real es 23:59 | — |
 
 ### Puertas de decisión (se recorta, no se estira)
 
 - **G0 — Sáb 12:30.** Sin stack ni decisiones, mínimo: pipeline Python + app de una página.
 - **G1 — Sáb 21:00.** Sin grilla armonizada, se recorta a MODIS + S-NPP con calibración global y se sigue.
 - **G2 — Dom 02:00.** Si el calendario no se dibuja con datos reales, el domingo se invierte en eso y se eliminan mapa, estacionalidad y presets.
-- **G3 — Dom 12:00.** Si faltan CSV o panel de procedencia, prioriza el CSV: es requisito explícito.
-- **G4 — Dom 15:00.** Congelamiento de código.
+- **G3 — Dom 08:00.** Si faltan entregables, se prioriza en este orden: CSV (requisito explícito), procedencia (credibilidad), deploy (supervivencia).
+- **G4 — Dom 11:30.** Congelamiento. Después de esta hora no entra nada que no sea el envío.
 
 ## 12. Decisiones
 
@@ -318,6 +344,11 @@ features. El espacio libre es impacto local, flujo del respondedor y validación
   enlace de FIRMS, la estimación de 45 GB y la propuesta de acotar a una región con método de factor
   mensual. Su texto se conserva en §1, §2 y §3; la observación estacional es la justificación del factor
   por mes calendario de §4. El archivo suelto se eliminó al quedar integrado acá.
+- **`firetrack_problema_explicado`** (equipo): documento de entrada sin jerga más tres diagramas. Aporta
+  el encuadre de que **un foco es un píxel caliente y no un incendio**, la proporción **7:1** entre
+  píxeles MODIS y VIIRS (1000/375 ≈ 2,67; al cuadrado ≈ 7,1), la tabla de saltos 2012/2018/2023 y la
+  analogía del "tipo de cambio" a unidades Aqua. Se conserva como [`problema-explicado.md`](problema-explicado.md)
+  y los diagramas en `docs/img/`; el encuadre 7:1 subió a §1.1 y §4. Carpeta y zip originales eliminados.
 - **Verificación técnica** (commit `67324a0`): `DAY_RANGE` 1–5, `MAP_KEY` y su límite, cobertura real
   por sensor incluido el fin de S-NPP el 2026-11-02, presupuesto de transacciones medido, contrato de
   requisitos, riesgos, cronograma con puertas y stack.

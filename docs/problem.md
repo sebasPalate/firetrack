@@ -2,7 +2,7 @@
 
 **Event:** NASA Space Apps Challenge 2026
 **Team:** 3 people — software engineer (dev), mechanical engineer, industrial engineer
-**Window:** Saturday 11:00 → Sunday 17:00 local time (30 h wall clock, ~21 h effective work)
+**Window:** Saturday 11:00 → Sunday 12:00 local time (25 h wall clock); code freeze Sunday 11:30, submission target Sunday 12:00, platform closes Sunday 23:59.
 **Status:** problem definition draft, pre-implementation. Nothing is built yet.
 **Scope of this document:** what the challenge really asks, what is technically hard, what we will build, who owns what.
 
@@ -195,6 +195,9 @@ Shared: daily 15-min sync, one decision log, one repo, one person commits (dev) 
 | Preset AOIs and their justification | B + C |
 
 ## 10. Timeline (30 h wall clock)
+
+> **Superseded:** the canonical schedule is now 25 h with a Sunday 11:30 code freeze, see
+> `docs/problema.md` §11. This table is kept for reference only.
 
 | Block | Clock | Goal | Owner |
 |---|---|---|---|
