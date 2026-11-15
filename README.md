@@ -1,10 +1,10 @@
 # Firetrack
 
+**Project FireBallers** · NASA Space Apps Challenge 2026 — [*Harmonization of MODIS and VIIRS Hot Spots*](https://www.spaceappschallenge.org/).
+
 **One comparable fire record from NASA MODIS and VIIRS.** A burning activity calendar for any area of
 interest, so a fire manager can answer one question honestly: *is this month unusual, or is the record
 just telling me that a new satellite turned on?*
-
-NASA Space Apps Challenge 2026 — [*Harmonization of MODIS and VIIRS Hot Spots*](https://www.spaceappschallenge.org/).
 
 <p align="center">
   <a href="https://sebaspalate.github.io/firetrack/"><img src="https://img.shields.io/badge/Live%20demo-open-FF9A3C?style=for-the-badge" alt="Live demo"></a>
@@ -184,6 +184,23 @@ Three deliberate boundaries:
 - **The API never reads FIRMS or the mirror.** It serves precomputed artifacts only.
 - **The pipeline is not the backend.** Merging them puts pandas and the whole ETL inside the API image.
 - **Next.js is presentation only.** No DuckDB in serverless functions; the data layer stays in FastAPI.
+
+**Languages.** Python for ingest, harmonization and the API; TypeScript for the client; SQL through
+DuckDB for every query that spans more than one year.
+
+## How AI was used
+
+AI was a directed engineering tool here, not an author of the claims. Every number in this repository is
+produced by the pipeline in `pipeline/`, from code that is committed and reviewable.
+
+- **Harness.** OpenCode and Pi as coding agents, directed through the gentle-ai orchestration layer —
+  planning, bounded tasks and verification gates — inside VS Code, with a person reading every change
+  before it was accepted.
+- **Amazon Quick** for requirements analysis, image generation with Amazon Nova Canvas, and parts of the
+  execution.
+
+What we did not delegate: the framing of the problem, the harmonization method, the decision to validate
+against Aqua, and the choice of demo regions. Those are ours, and `docs/problem.md` is the record of them.
 
 ## Repository layout
 
@@ -420,6 +437,14 @@ Region boundaries: Instituto Geografico Nacional (IGN), via geoBoundaries (https
 CC BY 4.0, simplified.
 Read through the Portolan mirror of FIRMS on Source Cooperative (CC0):
 <https://source.coop/portolan-mirrors/firms-catalog>.
+
+Software: Next.js 16, React 19 and Tailwind CSS 4 on the client; FastAPI, DuckDB, pandas and PyArrow in
+Python 3.13. No map library, no tile server and no chart library: the map and the figures are SVG drawn
+by this repository.
+
+Images: `docs/readme/hero.png` and `docs/readme/product.png` are screenshots of this app; the three
+figures in `docs/img/` are generated from the artifacts by `python -m pipeline.charts`. No third-party
+imagery is used.
 
 We acknowledge the use of data and/or imagery from NASA's Fire Information for Resource Management System
 (FIRMS) (https://earthdata.nasa.gov/firms), part of NASA's Earth Observing System Data and Information
