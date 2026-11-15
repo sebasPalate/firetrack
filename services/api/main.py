@@ -12,13 +12,17 @@ Artifacts consumed (produced by the pipeline, never written here):
 
     data/processed/calendar/{region}.parquet   one row per year+month
     data/processed/hotspots/{region}.parquet   unified detections
-    data/processed/method.json                 calibration table + limitations
+    data/processed/method/{region}.json        calibration table, validation, limitations
+
+The payloads are built by ``pipeline.payloads``, which ``pipeline.export_web`` also
+uses to write the static copy for the web client, so both always agree.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -28,6 +32,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))  # uvicorn runs from services/api; the payload code lives in pipeline/
+
+from pipeline.payloads import calendar_payload, csv_cell, public_region  # noqa: E402
 DATA_DIR = Path(os.environ.get("FIRETRACK_DATA_DIR", REPO_ROOT / "data"))
 PROCESSED = DATA_DIR / "processed"
 REGIONS_PATH = DATA_DIR / "regions.json"
@@ -91,17 +98,18 @@ def query_rows(path: Path, sql_suffix: str = "", params: list | None = None) -> 
 @app.get("/health")
 def health() -> dict:
     calendars = sorted(p.stem for p in (PROCESSED / "calendar").glob("*.parquet"))
+    methods = sorted(p.stem for p in (PROCESSED / "method").glob("*.json"))
     return {
         "status": "ok" if calendars else "no-artifacts",
         "regions_configured": len(load_regions()) if REGIONS_PATH.exists() else 0,
         "regions_ready": calendars,
-        "has_method": (PROCESSED / "method.json").exists(),
+        "methods_ready": methods,
     }
 
 
 @app.get("/regions")
 def regions() -> list[dict]:
-    return list(load_regions().values())
+    return [public_region(region) for region in load_regions().values()]
 
 
 @app.get("/calendar")
@@ -123,63 +131,10 @@ def calendar(
         params.append(end.year * 100 + end.month)
     where = f"where {' and '.join(clauses)}" if clauses else ""
 
-    rows = sorted(
-        query_rows(path, where, params),
-        key=lambda row: (row["year"], row["month"]),
-    )
+    rows = query_rows(path, where, params)
     if not rows:
         raise HTTPException(404, "no data in the requested range")
-
-    years = sorted({row["year"] for row in rows})
-    by_key = {(row["year"], row["month"]): row for row in rows}
-
-    # Partial and provisional rows are served, but they never set the baseline: a
-    # month still being observed, or a running year that mixes near-real-time
-    # rows, would make every other year look like an anomaly.
-    by_month: dict[int, list[float]] = {}
-    for row in rows:
-        if row.get("partial") or row.get("provisional") or row["harmonized_index"] is None:
-            continue
-        by_month.setdefault(row["month"], []).append(row["harmonized_index"])
-
-    median_by_month = {
-        month: _median(values) for month, values in sorted(by_month.items())
-    }
-
-    def matrix(key: str) -> list[list]:
-        return [
-            [by_key.get((year, month), {}).get(key) for year in years]
-            for month in range(1, 13)
-        ]
-
-    harmonized = matrix("harmonized_index")
-    anomaly = [
-        [
-            None
-            if value is None
-            or not median_by_month.get(month)
-            or by_key[(year, month)].get("partial")
-            else round((value - median_by_month[month]) / median_by_month[month] * 100, 1)
-            for year, value in zip(years, harmonized[month - 1])
-        ]
-        for month in range(1, 13)
-    ]
-
-    return {
-        "region": config,
-        "years": years,
-        "months": list(range(1, 13)),
-        "harmonized": harmonized,
-        "raw_count": matrix("raw_count"),
-        "partial": matrix("partial"),
-        "provisional": matrix("provisional"),
-        "source": matrix("source"),
-        "factor": matrix("factor"),
-        "observed_days": matrix("observed_days"),
-        "median_by_month": median_by_month,
-        "anomaly_pct": anomaly,
-        "units": "harmonized activity index (not an absolute fire count)",
-    }
+    return calendar_payload(config, rows)
 
 
 @app.get("/detections")
@@ -215,7 +170,7 @@ def detections(
     rows = rows[:limit]
 
     header = ",".join(rows[0].keys())
-    body = "\n".join(",".join(_cell(value) for value in row.values()) for row in rows)
+    body = "\n".join(",".join(csv_cell(value) for value in row.values()) for row in rows)
     # The filename is served, not guessed by the browser: the client is on
     # another origin, where the `download` attribute is ignored. It names the
     # range the user asked for, not the rows that happened to survive `limit`.
@@ -234,23 +189,9 @@ def detections(
 
 
 @app.get("/method")
-def method() -> dict:
-    path = PROCESSED / "method.json"
+def method(region: str = Query(..., description="region id from data/regions.json")) -> dict:
+    region_or_404(region)
+    path = PROCESSED / "method" / f"{region}.json"
     if not path.exists():
-        raise HTTPException(503, "method.json is not generated yet")
+        raise HTTPException(503, f"method/{region}.json is not generated yet: run  python -m pipeline.harmonize {region}")
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _median(values: list[float]) -> float:
-    ordered = sorted(values)
-    middle = len(ordered) // 2
-    if len(ordered) % 2:
-        return round(ordered[middle], 4)
-    return round((ordered[middle - 1] + ordered[middle]) / 2, 4)
-
-
-def _cell(value: object) -> str:
-    if value is None:
-        return ""
-    text = str(value)
-    return f'"{text}"' if "," in text else text
