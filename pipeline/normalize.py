@@ -1,72 +1,26 @@
-"""Sensor-agnostic normalization of FIRMS rows.
+"""Sensor-agnostic confidence handling for MODIS and VIIRS rows.
 
-MODIS and VIIRS share a core of columns and disagree on the rest. Everything
-downstream must read one schema, so the divergence is absorbed here and nowhere
-else.
+MODIS reports ``confidence`` as 0-100 and VIIRS reports ``l`` / ``n`` / ``h``.
+The two scales have no official equivalence, so they are never used to compare
+magnitudes: the score below exists to filter and to label a row in the CSV
+export, and the filter itself uses two separate predicates (``firms.CONF_SQL``).
 
-Column differences:
-
-============  ==========================  ==========================
-concept       MODIS                       VIIRS
-============  ==========================  ==========================
-brightness    ``brightness``              ``bright_ti4``
-background    ``bright_t31``              ``bright_ti5``
-confidence    0-100 numeric               ``l`` / ``n`` / ``h``
-============  ==========================  ==========================
+The Python and the SQL mapping are generated from the same table and pinned
+against each other by ``tests/test_normalize.py``, because a pipeline that
+filters in SQL and exports in Python silently disagrees with itself otherwise.
 """
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any
 
-#: Nominal pixel size in km at nadir, used to weight cells.
-PIXEL_KM = {"MODIS": 1.0, "VIIRS": 0.375}
-
-#: Midpoints of the VIIRS confidence bands. Assumption, documented on purpose:
-#: the bands are not calibrated against the MODIS 0-100 scale, so the resulting
-#: score is only valid for filtering, never for comparing magnitudes.
+#: Midpoints of the VIIRS confidence bands. Documented assumption: only valid
+#: for filtering and labelling, never for comparing intensity across sensors.
 VIIRS_CONFIDENCE_BANDS = {"l": 0.3, "n": 0.6, "h": 0.9}
-
-UNIFIED_FIELDS = (
-    "sensor",
-    "platform",
-    "latitude",
-    "longitude",
-    "acq_date",
-    "acq_time",
-    "datetime_utc",
-    "confidence_raw",
-    "confidence_score",
-    "brightness",
-    "brightness_t31",
-    "frp",
-    "daynight",
-    "type",
-    "scan",
-    "track",
-    "pixel_km",
-)
-
-
-def parse_acq_time(raw: Any) -> str:
-    """Convert FIRMS ``acq_time`` (HHMM, leading zeros dropped) to ``HH:MM``."""
-    if raw is None:
-        raise ValueError("acq_time is missing")
-    text = str(raw).strip()
-    if not text.isdigit():
-        raise ValueError(f"acq_time is not numeric: {raw!r}")
-    if len(text) > 4:
-        raise ValueError(f"acq_time is out of range: {raw!r}")
-
-    padded = text.zfill(4)
-    hours, minutes = int(padded[:2]), int(padded[2:])
-    if not (0 <= hours <= 23 and 0 <= minutes <= 59):
-        raise ValueError(f"acq_time is out of range: {raw!r}")
-    return f"{hours:02d}:{minutes:02d}"
 
 
 def normalize_confidence(raw: Any) -> float | None:
-    """Map MODIS numeric confidence or VIIRS band labels onto 0..1.
+    """Map MODIS numeric confidence or a VIIRS band label onto 0..1.
 
     Raises on unknown values instead of silently defaulting, because a wrong
     default would quietly filter out real detections (risk R5).
@@ -90,41 +44,15 @@ def normalize_confidence(raw: Any) -> float | None:
     return round(value / 100.0, 4)
 
 
-def normalize_row(row: Mapping[str, Any], sensor: str) -> dict[str, Any]:
-    """Rewrite one FIRMS row into the unified schema."""
-    instrument = str(row.get("instrument") or sensor.split("_")[0]).strip()
-    acq_date = str(row.get("acq_date") or "").strip()
-    acq_time = parse_acq_time(row.get("acq_time"))
-    raw_confidence = row.get("confidence")
+def confidence_score_sql(sensor_column: str, confidence_column: str) -> str:
+    """SQL twin of :func:`normalize_confidence`, built from the same band table.
 
-    return {
-        "sensor": sensor,
-        "platform": str(row.get("satellite") or "").strip(),
-        "latitude": float(row["latitude"]),
-        "longitude": float(row["longitude"]),
-        "acq_date": acq_date,
-        "acq_time": acq_time,
-        "datetime_utc": f"{acq_date}T{acq_time}:00Z",
-        "confidence_raw": "" if raw_confidence is None else str(raw_confidence).strip(),
-        "confidence_score": normalize_confidence(raw_confidence),
-        "brightness": _optional_float(row.get("brightness") or row.get("bright_ti4")),
-        "brightness_t31": _optional_float(row.get("bright_t31") or row.get("bright_ti5")),
-        "frp": _optional_float(row.get("frp")),
-        "daynight": str(row.get("daynight") or "").strip(),
-        "type": str(row.get("type") or "").strip(),
-        "scan": _optional_float(row.get("scan")),
-        "track": _optional_float(row.get("track")),
-        "pixel_km": PIXEL_KM.get(instrument.upper(), None),
-    }
-
-
-def _optional_float(raw: Any) -> float | None:
-    if raw is None:
-        return None
-    text = str(raw).strip()
-    if not text:
-        return None
-    try:
-        return float(text)
-    except ValueError:
-        return None
+    Unknown labels become NULL here instead of raising, because a single bad row
+    must not abort a scan of a million detections.
+    """
+    bands = " ".join(f"WHEN '{label}' THEN {value}" for label, value in VIIRS_CONFIDENCE_BANDS.items())
+    return (
+        f"CASE WHEN {sensor_column} = 'MODIS' "
+        f"THEN least(greatest(try_cast({confidence_column} AS DOUBLE) / 100.0, 0), 1) "
+        f"ELSE CASE lower(trim({confidence_column})) {bands} ELSE NULL END END"
+    )

@@ -1,34 +1,16 @@
-"""Tests for the sensor-agnostic normalisation of FIRMS rows.
+"""Tests for the sensor-agnostic confidence handling.
 
 MODIS reports `confidence` as 0-100 and VIIRS reports l/n/h. Filtering without
 normalising them is the silent bug that ruins a series (risk R5), so the mapping
-is pinned here.
+is pinned here — and pinned twice, because the pipeline filters in SQL and
+exports in Python from the same table.
 """
 
 from __future__ import annotations
 
-from pipeline.normalize import normalize_confidence, parse_acq_time
+import duckdb
 
-
-def test_acq_time_pads_unpadded_values() -> None:
-    assert parse_acq_time("0") == "00:00"
-    assert parse_acq_time("5") == "00:05"
-    assert parse_acq_time("930") == "09:30"
-
-
-def test_acq_time_parses_full_values() -> None:
-    assert parse_acq_time("1342") == "13:42"
-    assert parse_acq_time("2359") == "23:59"
-    assert parse_acq_time(1342) == "13:42"
-
-
-def test_acq_time_rejects_garbage() -> None:
-    for bad in ("", "2461", "abcd", "-1", None):
-        try:
-            parse_acq_time(bad)
-        except ValueError:
-            continue
-        raise AssertionError(f"expected ValueError for acq_time={bad!r}")
+from pipeline.normalize import confidence_score_sql, normalize_confidence
 
 
 def test_modis_numeric_confidence_is_scaled() -> None:
@@ -56,6 +38,40 @@ def test_unknown_confidence_raises_instead_of_defaulting() -> None:
     except ValueError:
         return
     raise AssertionError("expected ValueError for an unknown confidence label")
+
+
+def test_sql_and_python_confidence_agree() -> None:
+    """The SQL export and the Python helper must never disagree on a valid value."""
+    sql = confidence_score_sql("sensor", "confidence")
+    con = duckdb.connect()
+    cases = [
+        ("MODIS", "0"),
+        ("MODIS", "30"),
+        ("MODIS", "80"),
+        ("MODIS", "100"),
+        ("VIIRS_SNPP", "l"),
+        ("VIIRS_SNPP", "n"),
+        ("VIIRS_SNPP", "h"),
+        ("VIIRS_SNPP", "H"),
+    ]
+    for sensor, confidence in cases:
+        value = con.execute(
+            f"SELECT {sql} FROM (SELECT ? AS sensor, ? AS confidence)", [sensor, confidence]
+        ).fetchone()[0]
+        expected = normalize_confidence(confidence)
+        assert value == expected, (sensor, confidence, value, expected)
+    con.close()
+
+
+def test_sql_confidence_never_leaves_the_unit_interval() -> None:
+    sql = confidence_score_sql("sensor", "confidence")
+    con = duckdb.connect()
+    for sensor, confidence in (("MODIS", "250"), ("MODIS", "-40"), ("VIIRS_SNPP", "medium"), ("VIIRS_SNPP", "")):
+        value = con.execute(
+            f"SELECT {sql} FROM (SELECT ? AS sensor, ? AS confidence)", [sensor, confidence]
+        ).fetchone()[0]
+        assert value is None or 0.0 <= value <= 1.0, (sensor, confidence, value)
+    con.close()
 
 
 def _run_all() -> None:
