@@ -1,10 +1,10 @@
 # Firetrack
 
-**Project FireBallers** · NASA Space Apps Challenge 2026 — [*Harmonization of MODIS and VIIRS Hot Spots*](https://www.spaceappschallenge.org/).
-
 **One comparable fire record from NASA MODIS and VIIRS.** A burning activity calendar for any area of
 interest, so a fire manager can answer one question honestly: *is this month unusual, or is the record
 just telling me that a new satellite turned on?*
+
+NASA Space Apps Challenge 2026 — [*Harmonization of MODIS and VIIRS Hot Spots*](https://www.spaceappschallenge.org/).
 
 <p align="center">
   <a href="https://sebaspalate.github.io/firetrack/"><img src="https://img.shields.io/badge/Live%20demo-open-FF9A3C?style=for-the-badge" alt="Live demo"></a>
