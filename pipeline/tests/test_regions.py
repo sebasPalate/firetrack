@@ -11,7 +11,7 @@ or with pytest if it is installed.
 
 from __future__ import annotations
 
-from pipeline.regions import contains, geometry_bounds, load_geometry, load_regions
+from pipeline.regions import contains, contains_many, geometry_bounds, load_geometry, load_regions
 
 #: (lon, lat, in Spain, in Aragón). City centres and enclaves, all far from a border
 #: compared with the ~300 m simplification of the boundary files.
@@ -68,6 +68,20 @@ def test_holes_are_excluded() -> None:
     assert contains([square], 2, 2)
     assert not contains([square], 5, 5)
     assert not contains([square], 11, 5)
+
+
+def test_the_vectorised_clip_agrees_with_the_scalar_one() -> None:
+    regions = load_regions()
+    names = list(CONTROL_POINTS)
+    lons = [CONTROL_POINTS[name][0] for name in names]
+    lats = [CONTROL_POINTS[name][1] for name in names]
+    for rid in ("spain", "aragon"):
+        polygons = load_geometry(regions[rid])
+        mask = contains_many(polygons, lons, lats)
+        for name, lon, lat, hit in zip(names, lons, lats, mask):
+            assert bool(hit) is contains(polygons, lon, lat), f"{rid}: {name}"
+    square = [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]], [[4, 4], [6, 4], [6, 6], [4, 6], [4, 4]]]
+    assert contains_many([square], [2, 5, 11], [2, 5, 5]).tolist() == [True, False, False]
 
 
 def _run_all() -> None:
