@@ -381,11 +381,7 @@ El reto se gana o se pierde en **credibilidad del método y comunicación**, no 
 | **D3** | `MODIS` + `VIIRS_SNPP` + `VIIRS_NOAA20` + `VIIRS_NOAA21`, filas `sp` y `nrt` | S-NPP termina el 2026-11-02 |
 | **D4** | Se commitean los artefactos procesados (`data/processed/`, ~12 MB) y nunca el caché crudo | Un deploy sirve la app sin correr una ingesta de 158 s. El caché crudo (`data/cache/`, cientos de MB) sigue fuera del repo y se regenera |
 | **D5** | Next.js en Vercel; FastAPI en Railway/Render/Fly | Dos despliegues simples y gratuitos |
-<<<<<<< HEAD
-| **D6** | **Región del demo: Iberia/Aragón** — bbox `[-10, 35.5, 4, 44]` | Registro completo 2000-11 → hoy, incendios de verano con estacionalidad clara y cercanía del equipo para explicarlo |
-=======
 | **D6** | **Regiones del demo:** España (península y Baleares) y Aragón. Sin Canarias. Recorte con el contorno oficial del IGN | España da señal suficiente y factores por mes visibles; Aragón es la historia local del evento de Zaragoza (§9.7) |
->>>>>>> da47292d2e5b5525ef18e4327b2e2d8a19e37e6c
 | **D7** | Única ingesta: mirror Portolan en `pipeline/firms.py`. Sin `MAP_KEY` ni API de FIRMS | Sin clave ni límite de 5 días, mismo diseño que Kiln Watch y verificado contra los archivos de NASA |
 
 ## 16. Stack
@@ -393,13 +389,8 @@ El reto se gana o se pierde en **credibilidad del método y comunicación**, no 
 ```
 apps/web/          Next.js + TypeScript + Tailwind (calendario en CSS grid, series en SVG propio)
 services/api/      FastAPI + DuckDB
-<<<<<<< HEAD
 pipeline/          Python: ingesta → normalización → armonización
-data/              regions.json + artefactos procesados commiteados (caché crudo ignorado)
-=======
-pipeline/          Python: ingesta → normalización → grilla → armonización
-data/              regions.json + aoi/ (contornos) + artefactos (crudos y Parquet ignorados por git)
->>>>>>> da47292d2e5b5525ef18e4327b2e2d8a19e37e6c
+data/              regions.json + aoi/ (contornos) + artefactos procesados commiteados (caché crudo ignorado)
 ```
 
 **Sin Plotly ni MapLibre.** El calendario es un grid de CSS, las series son SVG inline y la rampa de

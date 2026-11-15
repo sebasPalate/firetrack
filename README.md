@@ -164,14 +164,10 @@ pipeline/              ingest, normalizer, harmonizer, tests
   firms.py             ingest: Portolan mirror, per region and year cache, sensor days
   regions.py           loads data/regions.json and the boundaries, point-in-polygon clip
   normalize.py         sensor-agnostic schema, confidence and acquisition time
-<<<<<<< HEAD
   harmonize.py         calibration, monthly index, validation, artifact writer
   charts.py            the two figures in docs/img, drawn from the artifacts
 data/regions.json      area of interest list, shared by pipeline and API
-=======
-data/regions.json      demo regions (Spain, Aragón), shared by pipeline and API
 data/aoi/              official boundaries as GeoJSON (IGN via geoBoundaries, CC BY 4.0)
->>>>>>> da47292d2e5b5525ef18e4327b2e2d8a19e37e6c
 data/cache/            mirror reads, one Parquet per region and year (gitignored)
 data/sensor_days.parquet  observing days per satellite (gitignored)
 data/processed/        Parquet artifacts and method.json (committed, ~12 MB)
@@ -190,16 +186,12 @@ No key and no `.env` are needed. The first run downloads the DuckDB `spatial` an
 the global sensor-days table (three columns per year, once):
 
 ```powershell
-<<<<<<< HEAD
-python -m pipeline.firms iberia --dry-run
-python -m pipeline.firms iberia --from-year 2016 --to-year 2016
-python -m pipeline.firms iberia
-python -m pipeline.harmonize iberia
-=======
-python -m pipeline.firms aragon --dry-run
-python -m pipeline.firms aragon --from-year 2016 --to-year 2016
-python -m pipeline.firms
->>>>>>> da47292d2e5b5525ef18e4327b2e2d8a19e37e6c
+python -m pipeline.firms spain --dry-run
+python -m pipeline.firms spain --from-year 2016 --to-year 2016
+python -m pipeline.firms spain
+python -m pipeline.harmonize spain
+python -m pipeline.firms aragon
+python -m pipeline.harmonize aragon
 ```
 
 The full Iberia ingest takes about 158 s and the harmonization a few seconds; both are resumable per year.
@@ -211,14 +203,10 @@ when Suomi-NPP joins. The harmonizer prints the factor table and the validation 
 | `python -m pipeline.tests.test_firms` | bounding box, query and cache freshness (pure) |
 | `python -m pipeline.tests.test_regions` | demo regions, boundary files and point-in-polygon (pure) |
 | `python -m pipeline.tests.test_normalize` | confidence and time normalization (pure) |
-<<<<<<< HEAD
 | `python -m pipeline.tests.test_harmonize` | shrinkage, source preference, partial months, artifact contract |
 | `python -m pipeline.firms` | ingest every region in `data/regions.json`, resumable |
 | `python -m pipeline.harmonize <region>` | build `data/processed/` for one region |
 | `python -m pipeline.charts` | redraw `docs/img/salto_2012.svg` and `factor_por_mes.svg` from the artifacts |
-=======
-| `python -m pipeline.firms` | ingest both demo regions (`spain`, `aragon`), resumable |
->>>>>>> da47292d2e5b5525ef18e4327b2e2d8a19e37e6c
 | `cd services\api; uvicorn main:app --reload` | API on <http://localhost:8000/docs> |
 | `cd apps\web; npm install; npm run dev` | client on <http://localhost:3000>, reads `NEXT_PUBLIC_API_BASE` |
 | `cd apps\web; npm run build` | production build; the page is static, the data is fetched in the browser |

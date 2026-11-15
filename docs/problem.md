@@ -380,11 +380,7 @@ This challenge is won or lost on **method credibility and communication**, not o
 | **D3** | `MODIS` + `VIIRS_SNPP` + `VIIRS_NOAA20` + `VIIRS_NOAA21`, `sp` and `nrt` rows | S-NPP ends on 2026-11-02 |
 | **D4** | Commit the processed artifacts (`data/processed/`, ~12 MB), never the raw cache | A deploy serves the app without running a 158 s ingest. The raw cache (`data/cache/`, hundreds of MB) stays out of the repo and is rebuilt |
 | **D5** | Next.js on Vercel; FastAPI on Railway/Render/Fly | Two simple, free deployments |
-<<<<<<< HEAD
-| **D6** | **Demo region: Iberia/Aragón** — bbox `[-10, 35.5, 4, 44]` | Full record 2000-11 → today, summer fires with a clear seasonal shape, and proximity to the team to explain it |
-=======
 | **D6** | **Demo regions:** Spain (mainland and Balearic Islands) and Aragón. No Canary Islands. Clipped to the official IGN boundary | Spain gives enough signal and visible per-month factors; Aragón is the local story for the Zaragoza event (§9.7) |
->>>>>>> da47292d2e5b5525ef18e4327b2e2d8a19e37e6c
 | **D7** | Single ingest: the Portolan mirror in `pipeline/firms.py`. No `MAP_KEY`, no FIRMS API | No key and no 5-day cap, the same design as Kiln Watch, checked against the NASA files |
 
 ## 16. Stack
@@ -392,13 +388,8 @@ This challenge is won or lost on **method credibility and communication**, not o
 ```
 apps/web/          Next.js + TypeScript + Tailwind (calendar in CSS grid, series in hand-rolled SVG)
 services/api/      FastAPI + DuckDB
-<<<<<<< HEAD
 pipeline/          Python: ingest → normalize → harmonize
-data/              regions.json + committed processed artifacts (raw cache gitignored)
-=======
-pipeline/          Python: ingest → normalize → grid → harmonize
-data/              regions.json + aoi/ (boundaries) + artifacts (raw and Parquet gitignored)
->>>>>>> da47292d2e5b5525ef18e4327b2e2d8a19e37e6c
+data/              regions.json + aoi/ (boundaries) + committed processed artifacts (raw cache gitignored)
 ```
 
 **No Plotly, no MapLibre.** The calendar is a CSS grid, the series are inline SVG, and the colour ramps are
