@@ -1,6 +1,6 @@
 # Pipeline dependencies (ingest + harmonization).
 # DuckDB reads the Portolan GeoParquet mirror in place; its spatial and httpfs
 # extensions are downloaded on first use, so the first run needs internet.
-duckdb>=1.4,<3
+duckdb>=2.0.0,<3
 pandas>=2.2
 pyarrow>=16
