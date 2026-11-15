@@ -25,7 +25,7 @@ from pathlib import Path
 import duckdb
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import Response
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = Path(os.environ.get("FIRETRACK_DATA_DIR", REPO_ROOT / "data"))
@@ -43,6 +43,8 @@ app.add_middleware(
     allow_origins=[origin for origin in os.environ.get("ALLOWED_ORIGINS", "*").split(",")],
     allow_methods=["GET"],
     allow_headers=["*"],
+    # Without this the browser hides the row count and truncation flag of the CSV.
+    expose_headers=["Content-Disposition", "X-Firetrack-Rows", "X-Firetrack-Truncated"],
 )
 
 
@@ -171,20 +173,29 @@ def calendar(
         "raw_count": matrix("raw_count"),
         "partial": matrix("partial"),
         "provisional": matrix("provisional"),
+        "source": matrix("source"),
+        "factor": matrix("factor"),
+        "observed_days": matrix("observed_days"),
         "median_by_month": median_by_month,
         "anomaly_pct": anomaly,
         "units": "harmonized activity index (not an absolute fire count)",
     }
 
 
-@app.get("/detections", response_class=PlainTextResponse)
+@app.get("/detections")
 def detections(
     region: str = Query(...),
     start: date | None = None,
     end: date | None = None,
-    limit: int = Query(50_000, ge=1, le=500_000),
-) -> str:
-    """Stream the detections behind the current view as CSV."""
+    limit: int = Query(200_000, ge=1, le=500_000),
+) -> Response:
+    """Stream the detections behind the current view as CSV.
+
+    The default cap covers the busiest single year in Iberia (141k rows in 2025),
+    so a year export is never truncated by accident. When the cap does cut a
+    range, the response says so in ``X-Firetrack-Truncated`` instead of returning
+    a smaller file that looks complete.
+    """
     region_or_404(region)
     path = artifact(PROCESSED / "hotspots" / f"{region}.parquet")
 
@@ -197,13 +208,29 @@ def detections(
         params.append(end.isoformat())
     where = f"where {' and '.join(clauses)}" if clauses else ""
 
-    rows = query_rows(path, f"{where} limit {limit}", params)
+    rows = query_rows(path, f"{where} limit {limit + 1}", params)
     if not rows:
         raise HTTPException(404, "no detections in the requested range")
+    truncated = len(rows) > limit
+    rows = rows[:limit]
 
     header = ",".join(rows[0].keys())
     body = "\n".join(",".join(_cell(value) for value in row.values()) for row in rows)
-    return f"{header}\n{body}\n"
+    # The filename is served, not guessed by the browser: the client is on
+    # another origin, where the `download` attribute is ignored. It names the
+    # range the user asked for, not the rows that happened to survive `limit`.
+    first = start.isoformat() if start else rows[0]["acq_date"] or "start"
+    last = end.isoformat() if end else rows[-1]["acq_date"] or "end"
+    filename = f"firetrack-{region}-{first}-{last}.csv"
+    return Response(
+        f"{header}\n{body}\n",
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Firetrack-Rows": str(len(rows)),
+            "X-Firetrack-Truncated": "true" if truncated else "false",
+        },
+    )
 
 
 @app.get("/method")
