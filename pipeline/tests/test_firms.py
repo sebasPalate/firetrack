@@ -93,7 +93,7 @@ def test_plan_years_is_clamped_to_the_record() -> None:
 
 
 def test_cache_is_one_file_per_region_and_year() -> None:
-    assert cache_path("iberia", 2016, Path("data/cache")) == Path("data/cache/iberia/2016.parquet")
+    assert cache_path("spain", 2016, Path("data/cache")) == Path("data/cache/spain/2016.parquet")
 
 
 def test_freshness_rule() -> None:

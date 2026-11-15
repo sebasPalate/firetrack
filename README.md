@@ -103,6 +103,19 @@ mirror and in the official NASA FIRMS country files are identical:
 applied in the harmonization step so its effect can be reported. `data/sensor_days.parquet` holds the days on
 which each satellite delivered any detection anywhere on Earth: the denominator for partial months.
 
+### Demo regions
+
+| Region | Why | On the Aqua MODIS scale |
+|---|---|---|
+| **Spain** (mainland and Balearic Islands) | main demo: enough detections for a full calendar, and the per-month VIIRS/Aqua ratio really varies (day 3.4 to 5.6) | about 1,000 to 4,000 vegetation detections a year |
+| **Aragón** | local story for the Zaragoza event | about 40 to 60 a year, so its calibration should borrow strength from Spain |
+
+The ingest reads each region's bounding box, because that is what the mirror can prune on. Detections are then
+clipped to the official boundary in `data/aoi/` (Instituto Geografico Nacional via geoBoundaries, CC BY 4.0,
+simplified to about 300 m), so the box around Spain does not count fires in Portugal, Andorra or France. The
+Canary Islands are left out: a different fire regime 1,000 km away, and the 2021 La Palma eruption adds about
+31,000 detections that FIRMS types as vegetation. Ceuta and Melilla are left out too.
+
 ## 4. Architecture
 
 ```
@@ -135,9 +148,10 @@ apps/web/              Next.js client (created with create-next-app)
 services/api/          FastAPI service and the artifact contract
 pipeline/              ingest, normalizer, tests
   firms.py             ingest: Portolan mirror, per region and year cache, sensor days
-  regions.py           loads and validates data/regions.json, antimeridian split
+  regions.py           loads data/regions.json and the boundaries, point-in-polygon clip
   normalize.py         sensor-agnostic schema, confidence and acquisition time
-data/regions.json      area of interest list, shared by pipeline and API
+data/regions.json      demo regions (Spain, Aragón), shared by pipeline and API
+data/aoi/              official boundaries as GeoJSON (IGN via geoBoundaries, CC BY 4.0)
 data/cache/            mirror reads, one Parquet per region and year (gitignored)
 data/sensor_days.parquet  observing days per satellite (gitignored)
 data/processed/        Parquet artifacts (gitignored)
@@ -156,9 +170,9 @@ No key and no `.env` are needed. The first run downloads the DuckDB `spatial` an
 the global sensor-days table (three columns per year, once):
 
 ```powershell
-python -m pipeline.firms iberia --dry-run
-python -m pipeline.firms iberia --from-year 2016 --to-year 2016
-python -m pipeline.firms iberia
+python -m pipeline.firms aragon --dry-run
+python -m pipeline.firms aragon --from-year 2016 --to-year 2016
+python -m pipeline.firms
 ```
 
 The summary printed at the end already shows the problem: the detection count per year jumps in 2012, when
@@ -167,8 +181,9 @@ Suomi-NPP joins.
 | Command | Purpose |
 |---|---|
 | `python -m pipeline.tests.test_firms` | bounding box, query and cache freshness (pure) |
+| `python -m pipeline.tests.test_regions` | demo regions, boundary files and point-in-polygon (pure) |
 | `python -m pipeline.tests.test_normalize` | confidence and time normalization (pure) |
-| `python -m pipeline.firms` | ingest every region in `data/regions.json`, resumable |
+| `python -m pipeline.firms` | ingest both demo regions (`spain`, `aragon`), resumable |
 | `cd services\api; uvicorn main:app --reload` | API on <http://localhost:8000/docs> |
 | `cd apps; npx create-next-app@latest web --ts --tailwind --eslint --app --src-dir --import-alias "@/*"` | create the client once |
 
@@ -206,6 +221,8 @@ worse than an honest error.
 ## 10. Attribution
 
 Hotspot data: NASA FIRMS / LANCE, MODIS Collection 6.1 and VIIRS 375 m active fire products.
+Region boundaries: Instituto Geografico Nacional (IGN), via geoBoundaries (https://www.geoboundaries.org/),
+CC BY 4.0, simplified.
 Read through the Portolan mirror of FIRMS on Source Cooperative (CC0):
 <https://source.coop/portolan-mirrors/firms-catalog>.
 

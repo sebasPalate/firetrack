@@ -177,7 +177,7 @@ stay in the CSV with a `sensor` column.
 ### 7.3 What it is for
 
 With the series on the same scale, one can finally answer: *"did this August have more fire than normal in
-the Chaco?"* We compare this August against the median of every August since 2000. If it is 40 % above, that
+Aragón?"* We compare this August against the median of every August since 2000. If it is 40 % above, that
 is a real anomaly and not an effect of the satellite change. That is what firefighters, emergency services,
 scientists and land managers need.
 
@@ -252,7 +252,7 @@ It requires Earthdata Login or an emailed code, allows **one global year per req
 
 ### 9.5 Scope consequence
 
-- **Primary:** predefined regions with the full 2000 → present calendar.
+- **Primary:** two predefined regions (Spain and Aragón, §9.7) with the full 2000 → present calendar.
 - **Secondary:** arbitrary AOI in "limited coverage" mode (short window, declared in the UI).
 - **Rejected:** the full global 0.25° grid. A global monthly grid is ~1.04 M cells × 300 months: that is a
   backend, not something you send to a browser.
@@ -266,9 +266,26 @@ l/n/h), `version`. Unified schema: `sensor`, `platform`, `pixel_km`, `confidence
 
 ### 9.7 Geographic scope
 
-`data/regions.json` defines the AOIs. Candidates: **Chaco** (CONAE photo credit, Argentine local story),
-**Iberia/Aragón** (team proximity and European audience), Amazon, Cerrado, California, Australia SE,
-Siberia, Sahel and Borneo.
+Decision D6 (2026-11-15): the demo uses **two regions**, each with its own role.
+
+| Region | Role | Aqua MODIS scale |
+|---|---|---|
+| **Spain** (mainland and Balearic Islands) | lead: shows the method works. The VIIRS/Aqua ratio really changes by month (day 3.4 to 5.6) and the MODIS-denial test gives +6.1 % | about 1,000 to 4,000 vegetation detections a year |
+| **Aragón** | local story for the Zaragoza event | only about 40 to 60 a year: too few for its own per-month factors, so its calibration will borrow strength from Spain |
+
+`data/regions.json` stores a bounding box per region, which is what the ingest reads because it is what the
+mirror can prune on, and the path to its official boundary in `data/aoi/` (Instituto Geografico Nacional via
+geoBoundaries, CC BY 4.0, simplified to about 300 m). When the calendar is built, detections are clipped to that
+boundary, so fires in Portugal, Andorra or France are not counted.
+
+**Left out of the demo:** the Canary Islands (a different fire regime 1,000 km away, and in 2021 the La Palma
+eruption adds about 31,000 detections that FIRMS types as vegetation), Ceuta and Melilla. The 9 candidate world
+regions (Chaco, Amazon, Cerrado, California, Australia SE, Siberia, Sahel, Borneo and Iberia) are removed from
+`regions.json`.
+
+**Boundary check:** of the 442,559 detections NASA FIRMS assigns to Spain (without the Canary Islands) from 2000
+to 2025, 99.4 % fall inside the IGN boundary; most of the rest sit on the Portuguese border. The Aragón boundary
+gives the same detections as the OpenStreetMap one except 2 out of 18,026.
 
 ## 10. Scope
 
@@ -283,7 +300,7 @@ allows.
 
 ## 11. Demo script (5 minutes)
 
-1. Pick the demo region with the full record.
+1. Open Spain with the full record, then Aragón.
 2. The calendar fills in: dry-season band visible, 2024 vs 2005 **without** the artificial jump.
 3. Hover a month: value, median, anomaly.
 4. Switch to seasonality and yearly totals.
@@ -356,7 +373,7 @@ This challenge is won or lost on **method credibility and communication**, not o
 | **D3** | `MODIS` + `VIIRS_SNPP` + `VIIRS_NOAA20` + `VIIRS_NOAA21`, `sp` and `nrt` rows | S-NPP ends on 2026-11-02 |
 | **D4** | Commit aggregates only, never raw detections | Repository size vs reproducibility |
 | **D5** | Next.js on Vercel; FastAPI on Railway/Render/Fly | Two simple, free deployments |
-| **D6** | **Demo region:** Chaco vs Iberia/Aragón — `[OPEN]` | Chaco = CONAE story; Iberia = team proximity |
+| **D6** | **Demo regions:** Spain (mainland and Balearic Islands) and Aragón. No Canary Islands. Clipped to the official IGN boundary | Spain gives enough signal and visible per-month factors; Aragón is the local story for the Zaragoza event (§9.7) |
 | **D7** | Single ingest: the Portolan mirror in `pipeline/firms.py`. No `MAP_KEY`, no FIRMS API | No key and no 5-day cap, the same design as Kiln Watch, checked against the NASA files |
 
 ## 16. Stack
@@ -365,7 +382,7 @@ This challenge is won or lost on **method credibility and communication**, not o
 apps/web/          Next.js + TypeScript + Tailwind + Plotly + MapLibre
 services/api/      FastAPI + DuckDB
 pipeline/          Python: ingest → normalize → grid → harmonize
-data/              regions.json + artifacts (raw and Parquet gitignored)
+data/              regions.json + aoi/ (boundaries) + artifacts (raw and Parquet gitignored)
 ```
 
 **FastAPI and not Django:** a read-only analytics service with 5 endpoints. No auth, no admin, no
@@ -426,3 +443,5 @@ The open space is local impact, responder workflow and auditable validation.
 - **Source change** (2026-11-15): the ingest now reads only from the Portolan mirror (`pipeline/firms.py`),
   as Kiln Watch does. The Area API, the `MAP_KEY` and their scripts are removed. The mirror was checked against
   the official NASA FIRMS files (§9.3).
+- **Demo regions** (2026-11-15): D6 is closed. Spain (mainland and Balearic Islands) and Aragón, with official
+  IGN boundaries in `data/aoi/`. The 9 candidate regions are removed from `regions.json` (§9.7).
