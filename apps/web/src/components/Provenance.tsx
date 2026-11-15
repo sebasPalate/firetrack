@@ -1,6 +1,6 @@
 "use client";
 
-import { formatIndex, formatPercent } from "@/lib/format";
+import { formatCount, formatIndex, formatPercent } from "@/lib/format";
 import type { MethodPayload } from "@/lib/types";
 
 /** S8: sources, method, calibration window and known limitations, in plain words. */
@@ -23,6 +23,13 @@ export function Provenance({ method }: { method: MethodPayload }) {
             Detections in the mirror were checked against the official NASA FIRMS country files for 2016 and 2022: the
             counts are identical.
           </p>
+          {method.boundary ? (
+            <p className="mt-2">
+              Clipped to the official boundary (Instituto Geográfico Nacional via geoBoundaries, CC BY 4.0):{" "}
+              <strong className="text-slate-200">{formatCount(method.boundary.in_boundary)}</strong> of the{" "}
+              {formatCount(method.boundary.in_bbox)} filtered detections in the reading box fall inside.
+            </p>
+          ) : null}
         </div>
 
         <div>
@@ -37,6 +44,13 @@ export function Provenance({ method }: { method: MethodPayload }) {
             <strong className="text-slate-200">{calibration.calibration_last_year ?? "—"}</strong>. Sparse months are
             pulled towards the pooled factor {formatIndex(calibration.pooled)} with empirical-Bayes shrinkage.
           </p>
+          {calibration.prior ? (
+            <p className="mt-1">
+              Too few local Aqua detections for a seasonal shape of its own, so each month is shrunk towards the factor
+              of <strong className="text-slate-200">{calibration.prior.region}</strong> for the same month, rescaled to
+              this region&apos;s level.
+            </p>
+          ) : null}
           <p className="mt-1">
             One VIIRS at a time: <strong className="text-slate-200">{method.primary}</strong> carries the series;
             after it stopped, <strong className="text-slate-200">{method.tail}</strong> takes over with its own factor.
@@ -45,6 +59,14 @@ export function Provenance({ method }: { method: MethodPayload }) {
           <p className="mt-1">
             Validation in the overlap: median |error| {formatPercent(method.validation.median_abs_error_pct)}, worst{" "}
             {formatPercent(method.validation.worst_abs_error_pct)}.
+            {method.validation.holdout ? (
+              <>
+                {" "}
+                Blind test with Aqua hidden ({method.validation.holdout.test[0].slice(0, 4)} to{" "}
+                {method.validation.holdout.test[1].slice(0, 4)}): {formatPercent(method.validation.holdout.error_pct)},
+                against {formatPercent(method.validation.holdout.raw_error_pct)} for raw VIIRS.
+              </>
+            ) : null}
           </p>
         </div>
 

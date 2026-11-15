@@ -57,7 +57,8 @@ export function DetailPanel({
             Carried by <strong className="text-slate-200">{source}</strong>
             {factor && factor !== 1 ? (
               <>
-                , divided by a factor of <strong className="tabular-nums text-slate-200">{factor}</strong>
+                , divided by a factor of{" "}
+                <strong className="tabular-nums text-slate-200">{factor.toFixed(2)}</strong>
               </>
             ) : (
               <> — the reference sensor itself, so its counts are the unit</>

@@ -4,21 +4,27 @@ No plotting library: the SVGs are written by hand so the figures in ``docs/``
 cannot drift away from ``data/processed/`` and so the repo keeps a small
 dependency set. Run after the harmonizer:
 
-    python -m pipeline.charts
+    python -m pipeline.charts            # Spain
+    python -m pipeline.charts aragon
 
 Writes ``docs/img/salto_2012.svg`` and ``docs/img/factor_por_mes.svg``.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
 import duckdb
 
+from pipeline.regions import load_regions
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA = REPO_ROOT / "data" / "processed"
 IMG = REPO_ROOT / "docs" / "img"
+#: Region drawn in the figures; ``main`` can change it from the command line.
+REGION = {"id": "spain", "name": "Spain"}
 
 INK = "#1f2933"
 MUTED = "#6b7280"
@@ -55,7 +61,7 @@ def _polyline(points: list[tuple[float, float]], stroke: str, width: float = 2.2
 
 def yearly() -> tuple[list[int], list[float], list[float], set[int]]:
     """Yearly totals, plus which years are provisional (the running year)."""
-    calendar = DATA / "calendar" / "iberia.parquet"
+    calendar = DATA / "calendar" / f"{REGION['id']}.parquet"
     con = duckdb.connect()
     rows = con.execute(
         f"""
@@ -164,7 +170,7 @@ def step_chart() -> str:
         f'aria-label="Raw detections jump when each satellite joins; the harmonized index stays level">'
         f'<rect width="{width}" height="{height}" fill="#ffffff"/>'
         + _text(left, 30, "The same fires, two ways of counting them", 16, INK, "start", 600)
-        + _text(left, 50, "Iberia, yearly totals from 2001. Both panels share the year axis.", 11, MUTED)
+        + _text(left, 50, f"{REGION['name']}, yearly totals from 2001. Both panels share the year axis.", 11, MUTED)
         + raw_svg
         + index_svg
         + "".join(marks)
@@ -178,7 +184,7 @@ def step_chart() -> str:
 
 
 def factor_chart() -> str:
-    method = json.loads((DATA / "method.json").read_text(encoding="utf-8"))
+    method = json.loads((DATA / "method" / f"{REGION['id']}.json").read_text(encoding="utf-8"))
     monthly = method["calibration"]["monthly"]
     factors = [monthly[f"{month:02d}"]["factor"] for month in range(1, 13)]
     pooled = method["calibration"]["pooled"]
@@ -225,12 +231,18 @@ def factor_chart() -> str:
         + _text(left, 50, f"How many VIIRS detections equal one Aqua MODIS detection, fitted {method['calibration']['overlap_first']} onward.", 11, MUTED)
         + "".join(parts)
         + _text(left, height - 34, "The factors are not flat: a single yearly factor would be wrong almost every month.", 10, MUTED)
-        + _text(left, height - 18, "Computed by pipeline/harmonize.py and read here from data/processed/method.json.", 10, MUTED)
+        + _text(left, height - 18, f"Computed by pipeline/harmonize.py and read here from data/processed/method/{REGION['id']}.json.", 10, MUTED)
         + "</svg>"
     )
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Redraw docs/img from one region's artifacts")
+    parser.add_argument("region", nargs="?", default="spain")
+    args = parser.parse_args(argv)
+    config = load_regions()[args.region]
+    REGION.update(id=args.region, name=config["name"].split(" (")[0])
+
     IMG.mkdir(parents=True, exist_ok=True)
     (IMG / "salto_2012.svg").write_text(step_chart(), encoding="utf-8")
     (IMG / "factor_por_mes.svg").write_text(factor_chart(), encoding="utf-8")

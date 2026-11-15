@@ -4,9 +4,11 @@ import { sequential } from "@/lib/colors";
 import { MONTHS, formatIndex } from "@/lib/format";
 import type { CalendarPayload } from "@/lib/types";
 
+/** Height of the tallest bar, in pixels. */
+const TRACK_PX = 128;
+
 /** S6: month-of-year seasonality, using the same median the anomaly compares against. */
-export function Seasonality({ payload }: { payload: CalendarPayload }) {
-  const medians = MONTHS.map((_, month) => payload.median_by_month[String(month + 1)] ?? 0);
+export function Seasonality({ payload }: { payload: CalendarPayload }) {  const medians = MONTHS.map((_, month) => payload.median_by_month[String(month + 1)] ?? 0);
   const max = Math.max(...medians, 1);
   const peak = medians.indexOf(max);
 
@@ -17,9 +19,11 @@ export function Seasonality({ payload }: { payload: CalendarPayload }) {
         <span className="text-xs text-slate-400">median of every year since 2000</span>
       </header>
 
-      <div className="flex h-36 items-end gap-1" role="img" aria-label="Median activity per calendar month">
+      <div className="flex items-end gap-1" role="img" aria-label="Median activity per calendar month">
         {medians.map((value, month) => {
-          const height = Math.max((value / max) * 100, 2);
+          // A percentage height inside an auto-height flex column resolves to
+          // zero, so the bar is sized in pixels against a fixed track.
+          const pixels = Math.max((value / max) * TRACK_PX, 3);
           const background = sequential(value / max);
           return (
             <div key={month} className="group flex flex-1 flex-col items-center justify-end gap-1">
@@ -28,7 +32,7 @@ export function Seasonality({ payload }: { payload: CalendarPayload }) {
               </span>
               <div
                 className="w-full rounded-t-[2px]"
-                style={{ height: `${height}%`, backgroundColor: background }}
+                style={{ height: `${pixels}px`, backgroundColor: background }}
                 title={`${MONTHS[month]}: ${formatIndex(value)} (median)`}
               />
               <span

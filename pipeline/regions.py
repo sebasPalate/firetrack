@@ -119,3 +119,41 @@ def contains(polygons: list[Polygon], lon: float, lat: float) -> bool:
         if _in_ring(lon, lat, polygon[0]) and not any(_in_ring(lon, lat, hole) for hole in polygon[1:]):
             return True
     return False
+
+
+def contains_many(polygons: list[Polygon], lons, lats):
+    """Vectorised ``contains`` for whole columns: a numpy boolean mask.
+
+    Same even-odd rule as ``_in_ring``, one edge at a time over every point, so a
+    year of Spain (hundreds of thousands of detections) clips in about a second.
+    """
+    import numpy as np  # imported here so the pure tests stay dependency-free
+
+    x = np.asarray(lons, dtype=float)
+    y = np.asarray(lats, dtype=float)
+    inside = np.zeros(x.shape, dtype=bool)
+    for polygon in polygons:
+        outer = np.asarray(polygon[0], dtype=float)
+        box = (
+            (x >= outer[:, 0].min()) & (x <= outer[:, 0].max())
+            & (y >= outer[:, 1].min()) & (y <= outer[:, 1].max())
+        )
+        if not box.any():
+            continue
+        idx = np.flatnonzero(box)
+        hit = _ring_mask(x[idx], y[idx], outer)
+        for hole in polygon[1:]:
+            hit &= ~_ring_mask(x[idx], y[idx], np.asarray(hole, dtype=float))
+        inside[idx] |= hit
+    return inside
+
+
+def _ring_mask(x, y, ring):
+    import numpy as np
+
+    crossings = np.zeros(x.shape, dtype=bool)
+    for (xi, yi), (xj, yj) in zip(ring[1:], ring[:-1]):
+        straddles = (yi > y) != (yj > y)
+        if straddles.any():
+            crossings[straddles] ^= x[straddles] < (xj - xi) * (y[straddles] - yi) / (yj - yi) + xi
+    return crossings

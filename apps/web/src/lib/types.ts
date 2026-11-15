@@ -3,6 +3,8 @@ export type Region = {
   name: string;
   bbox: [number, number, number, number];
   why: string;
+  /** Repository path of the official boundary the detections are clipped to. */
+  geometry?: string;
 };
 
 /** One payload per region, straight from `GET /calendar`. */
@@ -43,6 +45,8 @@ export type MethodPayload = {
     bridge: { sensor: string; factor: number | null; terra?: number; aqua?: number };
     overlap_first: string;
     calibration_last_year: number | null;
+    /** Set when the monthly factors were shrunk towards a larger region's. */
+    prior?: { region: string; pooled: number } | null;
   };
   validation: {
     overlap_years: number[];
@@ -52,11 +56,26 @@ export type MethodPayload = {
     raw_step_2011_to_2013_pct: number | null;
     aqua_step_2011_to_2013_pct: number | null;
     index_step_2011_to_2013_pct: number | null;
+    /** Out of sample: factors fitted up to `train[1]`, Aqua hidden, `test` rebuilt from VIIRS. */
+    holdout?: Holdout | null;
   };
+  /** Detections in the cache box and inside the official boundary. */
+  boundary?: { in_bbox: number; in_boundary: number; geometry: string | null } | null;
   coverage: { first_month: string | null; last_month: string | null };
   artifacts: { calendar: string; hotspots: string };
   rows: number;
   limitations: string[];
+};
+
+export type Holdout = {
+  train: [string, string];
+  test: [string, string];
+  months: number;
+  per_year: Record<string, { index: number; aqua: number; raw_viirs: number; error_pct?: number }>;
+  error_pct: number | null;
+  raw_error_pct: number | null;
+  median_abs_year_error_pct: number | null;
+  spearman_monthly: number | null;
 };
 
 export type Cell = {

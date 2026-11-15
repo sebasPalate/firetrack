@@ -27,12 +27,22 @@ Method (H2, see docs/problema.md §7):
 * **The provisional tail is excluded from calibration**: a year that still mixes
   near-real-time rows with standard rows, or that has a satellite that stopped
   mid-year, is served but never used to fit the factors.
+* **Clipped to the official boundary.** The cache is read by bounding box; every
+  detection outside the region's GeoJSON (Portugal, France, Andorra, the sea) is
+  dropped before anything is counted.
+* **Small regions borrow the shape of a larger one.** ``--prior-region spain``
+  shrinks each monthly factor of Aragón towards Spain's factor for that month,
+  rescaled to Aragón's own pooled level, instead of towards a flat pooled factor.
+* **Blind test.** The factors are refitted on 2012-02 .. 2016-12 only, Aqua is
+  hidden, and 2017-2020 is rebuilt from Suomi-NPP alone. Unlike the overlap check,
+  that error is out of sample.
 
 Values are expressed in **Aqua MODIS detections**, which is why the output is an
 index and never a fire count.
 
-    python -m pipeline.harmonize iberia
-    python -m pipeline.harmonize iberia --no-write     # calibration report only
+    python -m pipeline.harmonize spain
+    python -m pipeline.harmonize aragon --prior-region spain
+    python -m pipeline.harmonize spain --no-write      # calibration report only
 """
 
 from __future__ import annotations
@@ -45,8 +55,9 @@ from pathlib import Path
 import pandas as pd
 
 from pipeline.env import load_env
-from pipeline.firms import CONF_SQL, DATA, connect, sql_literal
+from pipeline.firms import CONF_SQL, DATA, sql_literal
 from pipeline.normalize import confidence_score_sql
+from pipeline.regions import contains_many, load_geometry, load_regions
 
 load_env()
 
@@ -73,6 +84,12 @@ OVERLAP_FIRST = (2012, 2)
 SHRINK_K = 20.0
 #: A month is only used when the active sensor observed this share of its days.
 MIN_DAYS_FRACTION = 0.6
+
+#: Blind test: fit on the first VIIRS years only, then rebuild the next four without Aqua.
+HOLDOUT_TRAIN_LAST = 2016
+HOLDOUT_TEST = (2017, 2020)
+#: Name of the DuckDB view that holds one region's filtered, clipped detections.
+REGION_VIEW = "region_detections"
 
 #: Volcanoes, other static land sources and offshore platforms are not vegetation fires.
 STATIC_FREE = "coalesce(type, 0) = 0"
@@ -169,13 +186,43 @@ def detection_query(region: str, data_dir: Path | None = None) -> str:
     return f"SELECT {UNIFIED_COLUMNS} FROM read_parquet({files}) WHERE {CONF_SQL} AND {STATIC_FREE}"
 
 
-def monthly_counts(con, region: str, data_dir: Path | None = None) -> list[tuple]:
-    """Detections per year, month and satellite, after filtering."""
+def monthly_counts(con, region: str, data_dir: Path | None = None, relation: str | None = None) -> list[tuple]:
+    """Detections per year, month and satellite, after filtering.
+
+    ``relation`` is a view made by ``load_region`` (filtered and clipped); without
+    it the cache is read directly, with the filter but no boundary.
+    """
+    source = relation or f"({detection_query(region, data_dir)})"
     return con.execute(
         f"""SELECT year(acq_date), month(acq_date), satellite, count(*)
-            FROM ({detection_query(region, data_dir)})
+            FROM {source}
             GROUP BY ALL ORDER BY 1, 2, 3"""
     ).fetchall()
+
+
+def load_region(con, region: str, data_dir: Path | None = None, polygons=None) -> tuple[str, dict]:
+    """Materialize the filtered detections of one region as a table, clipped to ``polygons``.
+
+    The cache is read by bounding box, so a box around Spain also holds Portugal,
+    southern France and the sea. Clipping happens once, here, so the counts, the
+    calendar and the CSV export all see exactly the same rows.
+
+    Only the two coordinate columns travel to Python for the point-in-polygon
+    test; the rows stay in DuckDB, which keeps memory flat for large regions.
+    """
+    con.execute(f"CREATE OR REPLACE TEMP TABLE {REGION_VIEW} AS {detection_query(region, data_dir)}")
+    stats = {"in_bbox": int(con.execute(f"SELECT count(*) FROM {REGION_VIEW}").fetchone()[0])}
+    if polygons:
+        columns = con.execute(f"SELECT rowid, longitude, latitude FROM {REGION_VIEW}").fetchnumpy()
+        inside = contains_many(polygons, columns["longitude"], columns["latitude"])
+        outside = pd.DataFrame({"row": columns["rowid"][~inside]})
+        con.register("rows_outside_boundary", outside)
+        try:
+            con.execute(f"DELETE FROM {REGION_VIEW} WHERE rowid IN (SELECT row FROM rows_outside_boundary)")
+        finally:
+            con.unregister("rows_outside_boundary")
+    stats["in_boundary"] = int(con.execute(f"SELECT count(*) FROM {REGION_VIEW}").fetchone()[0])
+    return REGION_VIEW, stats
 
 
 def load_coverage(con, data_dir: Path | None = None) -> dict[str, dict[int, int]]:
@@ -205,13 +252,21 @@ def load_coverage(con, data_dir: Path | None = None) -> dict[str, dict[int, int]
 
 
 def build_calibration(
-    counts: list[tuple], coverage: dict[str, dict[int, int]], last_complete_year: int | None = None
+    counts: list[tuple],
+    coverage: dict[str, dict[int, int]],
+    last_complete_year: int | None = None,
+    prior_calibration: dict | None = None,
 ) -> dict:
     """Per calendar month: the VIIRS-to-Aqua factor, its bridge and its tail.
 
     Only complete months up to ``last_complete_year`` are measured. The pooled
     factor is both the prior and the fallback for a month that never has both
     sensors.
+
+    ``prior_calibration`` is another region's calibration, as written to its method file.
+    With it, each month is shrunk towards that region's factor for the same month,
+    rescaled by the ratio of the two pooled factors: the seasonal shape comes from
+    the larger region, the level from this one.
     """
     per_month: dict[tuple[int, int], dict[str, int]] = {}
     for year, month, satellite, n in counts:
@@ -237,13 +292,20 @@ def build_calibration(
 
     overall = measured(limit=last_complete_year)
     prior = pooled_ratio(overall["snpp"], overall["aqua"]) if overall["aqua"] else None
+    borrowed = _prior_shape(prior_calibration)
+
+    def month_prior(month: int) -> float:
+        own = prior or 1.0
+        if not borrowed:
+            return own
+        shape = borrowed["monthly"][f"{month:02d}"] / borrowed["pooled"]
+        return shape * (prior or borrowed["pooled"])
 
     table = {}
     for month in range(1, 13):
         totals = measured(month=month, limit=last_complete_year)
-        month_prior = prior or 1.0
         table[f"{month:02d}"] = {
-            "factor": round(shrink_ratio(totals["snpp"], totals["aqua"], month_prior), 4),
+            "factor": round(shrink_ratio(totals["snpp"], totals["aqua"], month_prior(month)), 4),
             "raw_ratio": round(pooled_ratio(totals["snpp"], totals["aqua"]), 4) if totals["aqua"] else None,
             "viiRs": int(totals["snpp"]),
             "aqua": int(totals["aqua"]),
@@ -296,9 +358,33 @@ def build_calibration(
             "aqua": int(aqua_total),
         },
         "shrink_k": SHRINK_K,
+        "prior": (
+            {"region": prior_calibration.get("region"), "pooled": borrowed["pooled"]}
+            if borrowed
+            else None
+        ),
         "overlap_first": f"{OVERLAP_FIRST[0]}-{OVERLAP_FIRST[1]:02d}",
         "calibration_last_year": last_complete_year,
     }
+
+
+def _prior_shape(prior_calibration: dict | None) -> dict | None:
+    """The pooled and per-month factors of another region, or None if unusable."""
+    if not prior_calibration or not prior_calibration.get("pooled"):
+        return None
+    monthly = {key: entry["factor"] for key, entry in prior_calibration["monthly"].items()}
+    if len(monthly) != 12 or not all(monthly.values()):
+        return None
+    return {"pooled": prior_calibration["pooled"], "monthly": monthly}
+
+
+def load_prior(region: str, data_dir: Path | None = None) -> dict:
+    """The calibration of an already harmonized region, tagged with its id."""
+    path = Path(data_dir or DATA) / "processed" / "method" / f"{region}.json"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found: run  python -m pipeline.harmonize {region}  first")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return {**payload["calibration"], "region": region}
 
 
 def build_calendar(
@@ -407,6 +493,104 @@ def validate(rows: list[dict], last_complete_year: int | None = None) -> dict:
     }
 
 
+def holdout(
+    counts: list[tuple],
+    coverage: dict[str, dict[int, int]],
+    prior_calibration: dict | None = None,
+    train_last: int = HOLDOUT_TRAIN_LAST,
+    test: tuple[int, int] = HOLDOUT_TEST,
+) -> dict | None:
+    """Blind test: fit on the overlap up to ``train_last``, then hide Aqua.
+
+    The test years are rebuilt from the primary VIIRS alone with those factors and
+    compared with what Aqua really saw. This is the situation of every month after
+    Aqua, so it is the honest error bar of the index; the overlap check in
+    ``validate`` is in sample and can only catch a systematic gap.
+    """
+    train = [row for row in counts if row[0] <= train_last]
+    calibration = build_calibration(
+        train, coverage, last_complete_year=train_last, prior_calibration=prior_calibration
+    )
+    per_month: dict[tuple[int, int], dict[str, int]] = {}
+    for year, month, satellite, n in counts:
+        per_month.setdefault((year, month), {})[satellite] = n
+
+    months = []
+    for (year, month), per_satellite in sorted(per_month.items()):
+        if not (test[0] <= year <= test[1]):
+            continue
+        key = month_key(year, month)
+        if not (
+            is_complete(coverage.get(PRIMARY, {}).get(key, 0), year, month)
+            and is_complete(coverage.get(REFERENCE, {}).get(key, 0), year, month)
+        ):
+            continue
+        viirs = per_satellite.get(PRIMARY, 0)
+        factor = calibration["monthly"][f"{month:02d}"]["factor"]
+        months.append((year, month, viirs / factor, per_satellite.get(REFERENCE, 0), viirs))
+    if not months:
+        return None
+
+    per_year: dict[int, dict] = {}
+    for year, _month, index, aqua, viirs in months:
+        bucket = per_year.setdefault(year, {"index": 0.0, "aqua": 0.0, "raw_viirs": 0.0})
+        bucket["index"] += index
+        bucket["aqua"] += aqua
+        bucket["raw_viirs"] += viirs
+    year_errors = []
+    for bucket in per_year.values():
+        if bucket["aqua"] > 0:
+            bucket["error_pct"] = round((bucket["index"] - bucket["aqua"]) / bucket["aqua"] * 100, 1)
+            year_errors.append(abs(bucket["error_pct"]))
+    year_errors.sort()
+
+    index_total = sum(m[2] for m in months)
+    aqua_total = sum(m[3] for m in months)
+    viirs_total = sum(m[4] for m in months)
+    return {
+        "train": [f"{OVERLAP_FIRST[0]}-{OVERLAP_FIRST[1]:02d}", f"{train_last}-12"],
+        "test": [f"{test[0]}-01", f"{test[1]}-12"],
+        "months": len(months),
+        "per_year": {
+            str(year): {k: round(v, 1) for k, v in bucket.items()} for year, bucket in sorted(per_year.items())
+        },
+        "error_pct": round((index_total - aqua_total) / aqua_total * 100, 1) if aqua_total else None,
+        "raw_error_pct": round((viirs_total - aqua_total) / aqua_total * 100, 1) if aqua_total else None,
+        "median_abs_year_error_pct": round(year_errors[len(year_errors) // 2], 1) if year_errors else None,
+        "spearman_monthly": _spearman([m[2] for m in months], [m[3] for m in months]),
+        "calibration": {
+            "pooled": calibration["pooled"],
+            "monthly": {key: {"factor": entry["factor"]} for key, entry in calibration["monthly"].items()},
+        },
+    }
+
+
+def _ranks(values: list[float]) -> list[float]:
+    order = sorted(range(len(values)), key=lambda i: values[i])
+    ranks = [0.0] * len(values)
+    i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and values[order[j + 1]] == values[order[i]]:
+            j += 1
+        for k in range(i, j + 1):
+            ranks[order[k]] = (i + j) / 2 + 1
+        i = j + 1
+    return ranks
+
+
+def _spearman(a: list[float], b: list[float]) -> float | None:
+    """Rank correlation: does the rebuilt series put the months in the same order as Aqua?"""
+    if len(a) < 3:
+        return None
+    ra, rb = _ranks(a), _ranks(b)
+    ma, mb = sum(ra) / len(ra), sum(rb) / len(rb)
+    cov = sum((x - ma) * (y - mb) for x, y in zip(ra, rb))
+    va = sum((x - ma) ** 2 for x in ra) ** 0.5
+    vb = sum((y - mb) ** 2 for y in rb) ** 0.5
+    return round(cov / (va * vb), 3) if va and vb else None
+
+
 def _step(before: float | None, after: float | None) -> float | None:
     if not before or after is None:
         return None
@@ -424,6 +608,8 @@ def write_artifacts(
     validation: dict,
     seen: dict,
     data_dir: Path | None = None,
+    relation: str | None = None,
+    boundary: dict | None = None,
 ) -> dict:
     root = Path(data_dir or DATA)
     processed = root / "processed"
@@ -442,8 +628,9 @@ def write_artifacts(
         con.unregister("calendar_rows")
 
     score = confidence_score_sql("sensor", "confidence")
+    source = relation or f"({detection_query(region, data_dir)})"
     con.execute(
-        f"""COPY (SELECT *, {score} AS confidence_score FROM ({detection_query(region, data_dir)}))
+        f"""COPY (SELECT *, {score} AS confidence_score FROM {source} ORDER BY acq_datetime)
             TO {sql_literal(hotspots_path.as_posix())} (FORMAT parquet, COMPRESSION zstd)"""
     )
 
@@ -458,6 +645,7 @@ def write_artifacts(
         "calibration": calibration,
         "validation": validation,
         "coverage": seen,
+        "boundary": boundary,
         "artifacts": {
             "calendar": calendar_path.relative_to(root.parent).as_posix(),
             "hotspots": hotspots_path.relative_to(root.parent).as_posix(),
@@ -471,15 +659,32 @@ def write_artifacts(
             "Years flagged provisional are served but excluded from calibration: they still mix near-real-time rows, so their level is less trustworthy than the fitted years.",
             "Aqua is the reference from 2002-07; Terra covers 2000-11 to 2002-06 through its own overlap factor.",
             "The last year mixes near-real-time rows and is excluded from calibration, so its values are provisional.",
-        ],
+            "Detections are clipped to the official boundary; a fire on the border counts only on the side its pixel centre falls.",
+            "Aqua's orbit drifts later in the afternoon after 2022, so overlap years from 2023 compare VIIRS with a slowly changing reference.",
+        ]
+        + (
+            [f"Monthly factors are shrunk towards those of {calibration['prior']['region']}: too few local Aqua detections for a seasonal shape of its own."]
+            if calibration.get("prior")
+            else []
+        ),
     }
-    (processed / "method.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    method_path = processed / "method" / f"{region}.json"
+    method_path.parent.mkdir(parents=True, exist_ok=True)
+    method_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return payload
+
+
+def connect():
+    """Plain DuckDB: the harmonizer only reads the local cache, so no extension is needed."""
+    import duckdb
+
+    return duckdb.connect()
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Harmonize a region's detections into one monthly index")
     parser.add_argument("region", help="region id from data/regions.json")
+    parser.add_argument("--prior-region", help="shrink the monthly factors towards this region's (run it first)")
     parser.add_argument("--no-write", action="store_true", help="print the calibration report only")
     args = parser.parse_args(argv)
 
@@ -487,17 +692,30 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no cache for {args.region}: run  python -m pipeline.firms {args.region}")
         return 2
 
+    config = load_regions().get(args.region, {})
+    polygons = load_geometry(config) if config.get("geometry") else None
+    prior = load_prior(args.prior_region) if args.prior_region else None
+    prior_holdout = None
+    if args.prior_region:
+        method_path = DATA / "processed" / "method" / f"{args.prior_region}.json"
+        held = json.loads(method_path.read_text(encoding="utf-8"))["validation"].get("holdout") or {}
+        prior_holdout = {**held["calibration"], "region": args.prior_region} if held.get("calibration") else None
+
     con = connect()
-    counts = monthly_counts(con, args.region)
+    relation, boundary = load_region(con, args.region, polygons=polygons)
+    counts = monthly_counts(con, args.region, relation=relation)
     coverage = load_coverage(con)
     last_full = max(year for year, _m, _s, _n in counts) - 1
     latest = max((year, month) for year, month, _s, _n in counts)
-    calibration = build_calibration(counts, coverage, last_complete_year=last_full)
+    calibration = build_calibration(counts, coverage, last_complete_year=last_full, prior_calibration=prior)
     rows = build_calendar(counts, coverage, calibration, latest=latest)
     validation = validate(rows, last_complete_year=last_full)
+    validation["holdout"] = holdout(counts, coverage, prior_calibration=prior_holdout)
 
     usable = [row for row in rows if row["harmonized_index"] is not None]
-    print(f"region : {args.region}")
+    print(f"region : {args.region}" + (f" (factors shrunk towards {args.prior_region})" if prior else ""))
+    if polygons:
+        print(f"clip   : {boundary['in_boundary']:,} of {boundary['in_bbox']:,} filtered detections inside the boundary")
     print(f"months : {len(rows)}, {len(usable)} usable, {sum(r['partial'] for r in usable)} partial")
     print(f"calibration years: {calibration['overlap_first']} .. {last_full} (the running year is served, not fitted)")
     print("\nmonth  factor  raw_ratio    viirs     aqua")
@@ -516,6 +734,13 @@ def main(argv: list[str] | None = None) -> int:
         f"vs index {validation['index_step_2011_to_2013_pct']}% "
         f"(Aqua itself {validation['aqua_step_2011_to_2013_pct']}%)"
     )
+    blind = validation["holdout"]
+    if blind:
+        print(
+            f"blind test {blind['test'][0]}..{blind['test'][1]} (fitted to {blind['train'][1]}, Aqua hidden): "
+            f"error {blind['error_pct']}% vs raw VIIRS {blind['raw_error_pct']}%, "
+            f"median |year error| {blind['median_abs_year_error_pct']}%, Spearman {blind['spearman_monthly']}"
+        )
 
     if args.no_write:
         return 0
@@ -530,6 +755,8 @@ def main(argv: list[str] | None = None) -> int:
             "first_month": f"{usable[0]['year']}-{usable[0]['month']:02d}" if usable else None,
             "last_month": f"{usable[-1]['year']}-{usable[-1]['month']:02d}" if usable else None,
         },
+        relation=relation,
+        boundary={**boundary, "geometry": config.get("geometry")} if polygons else None,
     )
     print(f"\nwrote {payload['artifacts']['calendar']} ({payload['rows']} rows)")
     return 0
