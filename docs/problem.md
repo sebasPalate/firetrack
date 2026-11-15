@@ -32,7 +32,7 @@ Imagine counting the people in a square with two cameras:
 | | MODIS (old camera) | VIIRS (new camera) |
 |---|---|---|
 | Pixel size | ~1 km × 1 km | ~375 m × 375 m |
-| Since | 2000 (Terra), 2002 (Aqua) | 2012 (S-NPP), 2018 (NOAA-20), 2023 (NOAA-21) |
+| Since | 2000 (Terra), 2002 (Aqua) | 2012 (S-NPP), 2018 (NOAA-20), 2024 (NOAA-21) |
 | Detects small fires | poorly | much better |
 | Overpass (local) | ~10:30 (Terra) and ~13:30 (Aqua) | ~13:30 and ~01:30 |
 
@@ -91,7 +91,7 @@ same time as VIIRS, and it has run continuously from 2002 to today.
 | 2002 | Aqua joins (MODIS) |
 | 2012 | The first VIIRS joins (S-NPP) |
 | 2018 | NOAA-20 joins (VIIRS) |
-| 2023 | NOAA-21 joins (VIIRS) |
+| 2024 | NOAA-21 joins (VIIRS), from 17 January in the FIRMS data |
 | 2026 | S-NPP stops delivering data (2 November) |
 
 The more satellites, the more overpasses and the more hotspots counted. That creates jumps in the series
@@ -139,8 +139,8 @@ the source of the MODIS and VIIRS hotspots. In the Space Apps forum a participan
 historical record at roughly **45 GB of CSV** `[THIRD-PARTY ESTIMATE, unverified]`. That is why limiting
 ourselves to regions makes sense instead of processing the whole planet.
 
-Note: that link is a **catalog page**, not an API. The real API lives at
-`firms.modaps.eosdis.nasa.gov/api/area/` and requires a `MAP_KEY` (§9.1).
+Note: that link is a **catalog page**, not a data source. We read the hotspots from the Portolan mirror, a
+public copy of FIRMS that needs no key (§9.3).
 
 ## 7. The solution: an exchange rate
 
@@ -194,51 +194,61 @@ scientists and land managers need.
 - **S9** A typical AOI query returns from the precomputed store in under 2 s.
 - **S10** Harmonization quality gate: during the overlap window, the calibrated index reproduces the MODIS-native series within a stated tolerance; a chart proving this exists in the repo and is linked from the app.
 
-## 9. Data — verified plan (2026-11-14)
+## 9. Data — verified plan (2026-11-15)
 
-### 9.1 `MAP_KEY`
+### 9.1 No key
 
-A free key tied to an email address. Request it at `firms.modaps.eosdis.nasa.gov/api/map_key/`; it arrives
-by email and authenticates the area API and the map services. It is not a user account or a subscription.
+We use neither a `MAP_KEY` nor the FIRMS Area API. The data is read from the Portolan mirror (§9.3), which is
+public, with no rate limit and no 5-day window. The repository needs and stores no credential.
 
-- Limit: **5000 transactions / 10 min**; a request for N days costs roughly N transactions.
-- If the email is already registered, the form will not resend the key: it is managed from the download portal.
-- It is a credential: it lives in `.env` (gitignored), never in the repo.
+### 9.2 Real coverage per satellite (in the mirror)
 
-### 9.2 Real coverage per product
-
-| Product | Coverage |
-|---|---|
-| MODIS C6.1 (SP) | 2000-11-01 → present (~5 month lag) |
-| VIIRS S-NPP 375 m (SP) | 2012-01-20 → **2026-11-02 (ended)** |
-| VIIRS NOAA-20 375 m (SP) | 2018-04-01 → present |
-| VIIRS NOAA-21 375 m (SP) | 2023-03-01 → present |
-
-**Critical finding:** S-NPP no longer delivers data. With S-NPP alone the series does not reach "today":
-the recent tail needs NOAA-20 and `_NRT` for the last few months.
-
-### 9.3 Chosen ingest (no Earthdata account)
-
-Area API in 5-day chunks (maximum `DAY_RANGE`), over bounded AOIs. The pipeline is **idempotent and
-resumable** per `(aoi, sensor, window)`: if it is interrupted, it does not re-download what it already has.
-
-Budget measured with `scripts/budget.py`:
-
-| Regions | Transactions | Wall clock waiting on the rate limit |
+| `sensor` | Platform | Coverage |
 |---|---|---|
-| 1 | 19,416 | ~0.6 h |
-| 3 | 58,248 | ~1.9 h |
-| 6 | 116,496 | ~3.9 h |
-| 9 | 174,744 | ~5.8 h |
+| `MODIS` (C6.1, 1 km) | Terra, Aqua | 2000-11-01 → present (Aqua from July 2002) |
+| `VIIRS_SNPP` (375 m) | Suomi-NPP | 2012-01-20 → **2026-11-02 (ended)** |
+| `VIIRS_NOAA20` (375 m) | NOAA-20 | 2018-04-01 → present |
+| `VIIRS_NOAA21` (375 m) | NOAA-21 | 2024-01-17 → present |
 
-With 37 h, **3 regions fit comfortably**; 6 only if the ingest runs in the background while the UI is being
-built. There is still a single developer: the real limit is their time, not the API.
+Science-quality rows (`sp`) replace near-real-time rows (`nrt`) about three to four months later, so the
+latest months are provisional. FIRMS publishes science-quality NOAA-21 from 2023-03-01, but the mirror
+carries it from 2024-01-17.
 
-### 9.4 Historical archive (rejected for today)
+**Critical finding:** S-NPP no longer delivers data. The recent tail depends on NOAA-20, NOAA-21 and the NRT
+rows. The last day of each satellite is measured from the data (`sensor_days`), never typed in.
+
+### 9.3 Ingest: Portolan mirror (the only path, decision D7)
+
+**Source:** the [Portolan mirror of FIRMS](https://source.coop/portolan-mirrors/firms-catalog), a public
+(CC0) copy of every FIRMS detection, MODIS and VIIRS, as one GeoParquet file per year
+(`year=YYYY/detections.parquet`). Rows are sorted along a Hilbert curve in groups of about 100,000, each with
+its own bounding box, so DuckDB downloads only the groups that touch the region. For central Spain in 2016
+that is 2 groups out of 248.
+
+The key point: **the mirror harmonizes nothing**. It carries the FIRMS columns verbatim. Counts still jump
+when a satellite joins, confidence is still 0-100 for MODIS and l/n/h for VIIRS, and `type` is empty for
+every NRT row. All normalization is still our job, in `pipeline/`.
+
+`pipeline/firms.py` keeps one file per region and year (`data/cache/<region>/<year>.parquet`) with every
+confidence level, plus `data/sensor_days.parquet` with the days each satellite delivered data. It is
+**idempotent and resumable**: finished years are never downloaded again and the current year is refreshed
+every 6 h.
+
+**Checked against NASA (2026-11-15).** We counted the detections in central Spain (-5.5, 38.5, -1.0, 42.3) in
+the mirror and in the official NASA FIRMS country files. They are identical:
+
+| Year | Aqua | Terra | Suomi-NPP | NOAA-20 |
+|---|---|---|---|---|
+| 2016 | 262 = 262 | 282 = 282 | 1,891 = 1,891 | |
+| 2022 | 488 = 488 | 526 = 526 | 2,892 = 2,892 | 3,682 = 3,682 |
+
+The design (read the remote GeoParquet with DuckDB, a per-year cache and measured observing days) is the one
+Kiln Watch uses in its `firms.py` (Team Off The Binary). The code is our own.
+
+### 9.4 FIRMS historical archive (dropped)
 
 It requires Earthdata Login or an emailed code, allows **one global year per request**, and delivery is
-**asynchronous by email**. It is the right path for "the whole planet", but not viable in this window. It
-stays as plan B and as a source for one cross-validation year.
+**asynchronous by email**. It is no longer needed: the mirror covers 2000 to today with no account.
 
 ### 9.5 Scope consequence
 
@@ -284,13 +294,13 @@ allows.
 
 | ID | Risk | Impact | Mitigation |
 |---|---|---|---|
-| R1 | Historical archive account or volume blocks the ingest | kills harmonization | the chosen ingest does not need it (§9.3); the archive stays as plan B |
+| R1 | The mirror goes offline during the hackathon | no new data | the local per-region, per-year cache keeps working; artifacts are built before the demo |
 | R2 | Harmonization is judged not credible | weak submission | index + validation chart + disclosed limits (S8, S10) |
 | R3 | Scope creep into polygons / auth / live data | no demo | bbox only, presets, precomputed data |
 | R4 | A single developer for data + web | bottleneck | pipeline first, UI second; B and C carry validation, requirements, QA and delivery |
 | R5 | VIIRS confidence is categorical vs MODIS numeric | silent filtering bug | single `confidence_score`, with a unit test (implemented) |
 | R6 | Date drift from `acq_date` + `acq_time` | off-by-one months in the calendar | `datetime_utc` in the unified schema (implemented) |
-| R7 | The 5000 transactions / 10 min limit | incomplete ingest | measured budget (§9.3) and a resumable cache |
+| R7 | The mirror is a third-party copy | data differs from NASA | checked against the official FIRMS files: exact match in 2016 and 2022 (§9.3) |
 | R8 | The series says "index" but the UI hints "fires" | credibility | §1 and S3 fix the language; C reviews it in QA |
 
 ## 13. Work split
@@ -308,7 +318,7 @@ This challenge is won or lost on **method credibility and communication**, not o
 | Block | Clock | Goal | Owner |
 |---|---|---|---|
 | **B0 Kickoff** | Sat 11:00–12:30 | decisions closed, stack fixed, repo ready | All |
-| **B1 Data audit** | Sat 12:30–15:00 | `MAP_KEY`, timed probe, one AOI loaded with 3 sensors | A (B in parallel) |
+| **B1 Data audit** | Sat 12:30–15:00 | data source verified, one AOI loaded with 3 sensors | A (B in parallel) |
 | **B2 Pipeline v0** | Sat 15:00–21:00 | normalized dataset + harmonized grid, calibration chart | A |
 | **B2b Parallel** | Sat 15:00–21:00 | `docs/method.md` and validation events / requirements frozen and script | B / C |
 | **Dinner + sync (G1)** | Sat 21:00–22:00 | gate review | All |
@@ -342,11 +352,12 @@ This challenge is won or lost on **method credibility and communication**, not o
 | ID | Decision | Reason |
 |---|---|---|
 | **D1** | Monorepo `apps/web` + `services/api` + `pipeline/` + `data/` | The pipeline is not the backend |
-| **D2** | Predefined regions with the full record; arbitrary AOI in limited mode | API ingest cannot cover the planet |
-| **D3** | `MODIS_SP` + `VIIRS_SNPP_SP` + `VIIRS_NOAA20_SP` (+ NRT on the tail) | S-NPP ends on 2026-11-02 |
+| **D2** | Predefined regions with the full record; arbitrary AOI in limited mode | A demo without waiting: demo regions are processed beforehand |
+| **D3** | `MODIS` + `VIIRS_SNPP` + `VIIRS_NOAA20` + `VIIRS_NOAA21`, `sp` and `nrt` rows | S-NPP ends on 2026-11-02 |
 | **D4** | Commit aggregates only, never raw detections | Repository size vs reproducibility |
 | **D5** | Next.js on Vercel; FastAPI on Railway/Render/Fly | Two simple, free deployments |
 | **D6** | **Demo region:** Chaco vs Iberia/Aragón — `[OPEN]` | Chaco = CONAE story; Iberia = team proximity |
+| **D7** | Single ingest: the Portolan mirror in `pipeline/firms.py`. No `MAP_KEY`, no FIRMS API | No key and no 5-day cap, the same design as Kiln Watch, checked against the NASA files |
 
 ## 16. Stack
 
@@ -381,7 +392,7 @@ The open space is local impact, responder workflow and auditable validation.
 
 ## 18. Next actions
 
-1. Request the `MAP_KEY` and run `scripts/check_firms.py` to measure real latency.
+1. Run `python -m pipeline.firms <region>` and check the 2012 step in the summary.
 2. Measure row volume per sensor-year and fix the grid with evidence.
 3. Generate the first real `calendar.json` for one AOI, and only then start the UI.
 4. Freeze S1–S10; anything new goes to "Should have".
@@ -412,3 +423,6 @@ The open space is local impact, responder workflow and auditable validation.
 - **Technical verification** (commit `67324a0`): `DAY_RANGE` 1–5, `MAP_KEY` and its limit, real coverage
   per sensor including the end of S-NPP, measured transaction budget, requirements, risks, schedule and
   stack.
+- **Source change** (2026-11-15): the ingest now reads only from the Portolan mirror (`pipeline/firms.py`),
+  as Kiln Watch does. The Area API, the `MAP_KEY` and their scripts are removed. The mirror was checked against
+  the official NASA FIRMS files (§9.3).
