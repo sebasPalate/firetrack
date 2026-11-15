@@ -23,6 +23,7 @@ import shutil
 from pathlib import Path
 
 from pipeline.firms import DATA, sql_literal
+from pipeline.harmonize import DETECTION_ORDER
 from pipeline.payloads import calendar_payload, detections_csv, public_region
 from pipeline.regions import REPO_ROOT, load_regions
 
@@ -60,7 +61,7 @@ def export_region(con, region: dict, data_dir: Path, out: Path) -> dict:
     sizes = {}
     for year in years:
         columns, rows = read_rows(
-            con, hotspots_path, f"WHERE year(acq_date) = {int(year)} ORDER BY acq_datetime"
+            con, hotspots_path, f"WHERE year(acq_date) = {int(year)} ORDER BY {DETECTION_ORDER}"
         )
         target = _ensure(detections / f"{year}.csv")
         target.write_text(detections_csv(columns, rows), encoding="utf-8")

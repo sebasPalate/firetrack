@@ -88,6 +88,12 @@ MIN_DAYS_FRACTION = 0.6
 #: Blind test: fit on the first VIIRS years only, then rebuild the next four without Aqua.
 HOLDOUT_TRAIN_LAST = 2016
 HOLDOUT_TEST = (2017, 2020)
+#: Total order for the detection rows. Several detections share a minute (one
+#: overpass), so sorting by time alone lets their order change between runs and
+#: every rebuild would look like a data change. These columns never tie in practice.
+DETECTION_ORDER = (
+    "acq_datetime, satellite, latitude, longitude, frp, confidence, daynight, scan, track, version, type"
+)
 #: Name of the DuckDB view that holds one region's filtered, clipped detections.
 REGION_VIEW = "region_detections"
 
@@ -630,7 +636,7 @@ def write_artifacts(
     score = confidence_score_sql("sensor", "confidence")
     source = relation or f"({detection_query(region, data_dir)})"
     con.execute(
-        f"""COPY (SELECT *, {score} AS confidence_score FROM {source} ORDER BY acq_datetime)
+        f"""COPY (SELECT *, {score} AS confidence_score FROM {source} ORDER BY {DETECTION_ORDER})
             TO {sql_literal(hotspots_path.as_posix())} (FORMAT parquet, COMPRESSION zstd)"""
     )
 
