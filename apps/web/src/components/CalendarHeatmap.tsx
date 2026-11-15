@@ -26,6 +26,29 @@ export function CalendarHeatmap({ payload, mode, scaleMax, years, selection, onS
   const columns = years.map((year) => payload.years.indexOf(year));
   const rows = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 
+  // One tab stop for the whole grid (roving tabindex); arrow keys move inside it.
+  const focusable =
+    selection && columns.some((column) => payload.years[column] === selection.year)
+      ? selection
+      : { year: payload.years[columns[0]], month: 0 };
+
+  function move(event: React.KeyboardEvent, column: number, month: number) {
+    let columnStep = 0;
+    let monthStep = 0;
+    if (event.key === "ArrowLeft") columnStep = -1;
+    else if (event.key === "ArrowRight") columnStep = 1;
+    else if (event.key === "ArrowUp") monthStep = -1;
+    else if (event.key === "ArrowDown") monthStep = 1;
+    else return;
+    event.preventDefault();
+    const position = columns.indexOf(column) + columnStep;
+    const nextMonth = month + monthStep;
+    if (position < 0 || position >= columns.length || nextMonth < 0 || nextMonth > 11) return;
+    const target = columns[position];
+    onSelect({ year: payload.years[target], month: nextMonth });
+    grid.current?.querySelector<HTMLButtonElement>(`[data-cell="${nextMonth}-${target}"]`)?.focus();
+  }
+
   function point(event: React.MouseEvent, year: number, month: number) {
     const box = grid.current?.getBoundingClientRect();
     if (!box) return;
@@ -84,7 +107,11 @@ export function CalendarHeatmap({ payload, mode, scaleMax, years, selection, onS
               <span
                 key={`h-${column}`}
                 className={`text-center text-[10px] tabular-nums ${
-                  payload.provisional[0][column] ? "font-bold text-amber-300" : "text-slate-400"
+                  payload.provisional[0][column]
+                    ? "font-bold text-amber-300"
+                    : selection?.year === payload.years[column]
+                      ? "font-bold text-sky-300"
+                      : "text-slate-400"
                 }`}
               >
                 {String(payload.years[column]).slice(2)}
@@ -93,7 +120,13 @@ export function CalendarHeatmap({ payload, mode, scaleMax, years, selection, onS
 
             {rows.map((month) => (
               <div key={`r-${month}`} className="contents">
-                <span className="pr-1 text-right text-[10px] text-slate-400">{MONTHS[month]}</span>
+                <span
+                  className={`pr-1 text-right text-[10px] ${
+                    selection?.month === month ? "font-bold text-sky-300" : "text-slate-400"
+                  }`}
+                >
+                  {MONTHS[month]}
+                </span>
                 {columns.map((column) => {
                   const value = payload.harmonized[month][column];
                   const anomaly = payload.anomaly_pct[month][column];
@@ -108,6 +141,12 @@ export function CalendarHeatmap({ payload, mode, scaleMax, years, selection, onS
                       key={`c-${month}-${column}`}
                       type="button"
                       aria-label={label}
+                      aria-pressed={isSelected}
+                      data-cell={`${month}-${column}`}
+                      tabIndex={
+                        focusable.year === payload.years[column] && focusable.month === month ? 0 : -1
+                      }
+                      onKeyDown={(event) => move(event, column, month)}
                       onClick={() => onSelect({ year: payload.years[column], month })}
                       onMouseEnter={(event) => point(event, payload.years[column], month)}
                       onMouseMove={(event) => point(event, payload.years[column], month)}

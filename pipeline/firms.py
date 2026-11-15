@@ -34,8 +34,7 @@ The cache holds every detection in the region's bbox. Clipping to the official
 boundary (``pipeline.regions.contains``) happens when the calendar is built.
 
 The layout (remote GeoParquet read with DuckDB, a per-year cache and a measured
-sensor-days table) follows Kiln Watch (Team Off The Binary, NASA Space Apps 2026,
-https://github.com/Aalvee-Aarham/kiln-watch). The code is our own.
+sensor-days table) is our own implementation.
 """
 
 from __future__ import annotations

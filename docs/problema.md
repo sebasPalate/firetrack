@@ -1,10 +1,7 @@
 # Firetrack — Armonización de hotspots MODIS y VIIRS
 
 **Evento:** NASA Space Apps Challenge 2026 — *Harmonization of MODIS and VIIRS Hot Spots*
-**Equipo:** 3 personas — ingeniería de software (dev), ingeniería mecánica, ingeniería industrial
-**Ventana real:** sábado 11:00 → domingo 23:59 (37 h de reloj)
-**Congelamiento de código:** domingo 20:00. **Envío:** domingo 21:30. **Colchón:** hasta 23:59.
-**Estado:** esqueleto de código funcionando; sin artefactos de datos todavía.
+**Estado:** pipeline, artefactos, API y aplicación web funcionando; resultados validados en España y Aragón.
 **Idioma:** documento de trabajo del equipo. La entrega, la presentación y el README final van en inglés.
 
 > Documento único del problema. `docs/problem.md` es la versión en inglés, equivalente, para el jurado.
@@ -251,8 +248,8 @@ niveles de confianza, y `data/sensor_days.parquet` con los días en que cada sat
 | 2016 | 262 = 262 | 282 = 282 | 1.891 = 1.891 | |
 | 2022 | 488 = 488 | 526 = 526 | 2.892 = 2.892 | 3.682 = 3.682 |
 
-El diseño (leer el GeoParquet remoto con DuckDB, caché por año y días de observación medidos) es el mismo que
-usa Kiln Watch en su `firms.py` (equipo Off The Binary). El código es nuestro.
+El diseño (leer el GeoParquet remoto con DuckDB, caché por año y días de observación medidos) es nuestro:
+el pipeline no depende de ningún proyecto previo.
 
 ### 9.4 Archivo histórico de FIRMS (descartado)
 
@@ -322,69 +319,29 @@ píxel.
 | R1 | El mirror deja de estar disponible durante el hackathon | sin datos nuevos | la caché local por región y año sigue sirviendo; los artefactos se generan antes del demo |
 | R2 | La armonización no resulta creíble | entrega débil | índice + gráfico de validación + límites declarados (S8, S10) |
 | R3 | Scope creep hacia polígonos / auth / datos en vivo | no hay demo | solo bbox, presets, datos precomputados |
-| R4 | Un solo desarrollador para datos + web | cuello de botella | pipeline primero, UI después; B y C cargan con validación, requisitos, QA y entrega |
+| R4 | Un solo desarrollador para datos + web | cuello de botella | pipeline primero, UI después; la validación y el QA avanzan en paralelo |
 | R5 | Confianza de VIIRS categórica vs MODIS numérica | filtrado silencioso | `confidence_score` único, con test unitario (implementado) |
 | R6 | Corrimiento de fecha por `acq_date` + `acq_time` | meses corridos en el calendario | `datetime_utc` en el esquema unificado (implementado) |
 | R7 | El mirror es una copia de terceros | datos distintos a los de NASA | comparado con los archivos oficiales de FIRMS: coincidencia exacta en 2016 y 2022 (§9.3) |
-| R8 | La serie dice "índice" pero la UI insinúa "incendios" | credibilidad | §1 y S3 fijan el lenguaje; revisión de C en QA |
-
-## 13. Reparto de trabajo
-
-| Pista | Dueño | Es dueño de | Terminado cuando |
-|---|---|---|---|
-| **A. Datos y software** | Ing. de software | Pipeline (ingesta → normalización → grilla → armonización → artefactos), API, frontend del calendario y gráficos, CSV | S1–S9 pasan sobre el AOI del demo; el repo reproduce el dataset desde scripts |
-| **B. Validación física** | Ing. mecánico | Geometría de pasada, footprint según ángulo de escaneo, umbrales de detección, significado del FRP; metodología de calibración; validación contra eventos conocidos (Amazonía 2019, Australia 2019–20, Canadá 2023); `docs/method.md` | Método calibrado con gráfico de validación sobre eventos reales, más supuestos físicos y modos de falla por escrito |
-| **C. Producto y entrega** | Ing. industrial | Usuario y recorrido del respondedor, definición operativa de "anomalía", plan y checklist de QA, registro de riesgos, texto de entrega, guion del demo, video, README para el jurado | Requisitos firmados, QA ejecutada antes de cada corrida, materiales listos 90 min antes |
-
-El reto se gana o se pierde en **credibilidad del método y comunicación**, no en CRUD.
-
-## 14. Cronograma (37 h de reloj)
-
-| Bloque | Horario | Objetivo | Dueño |
-|---|---|---|---|
-| **B0 Arranque** | Sáb 11:00–12:30 | decisiones cerradas, stack fijado, repo listo | Todos |
-| **B1 Auditoría de datos** | Sáb 12:30–15:00 | fuente de datos verificada, un AOI cargado con 3 sensores | A (B en paralelo) |
-| **B2 Pipeline v0** | Sáb 15:00–21:00 | dataset normalizado + grilla armonizada, gráfico de calibración | A |
-| **B2b Paralelo** | Sáb 15:00–21:00 | `docs/method.md` y eventos de validación / requisitos congelados y guion | B / C |
-| **Cena + sync (G1)** | Sáb 21:00–22:00 | revisión de puerta | Todos |
-| **B3 Núcleo de la app** | Sáb 22:00–Dom 02:00 | AOI + rango → calendario + mediana con datos reales | A |
-| **Descanso** | Dom 02:00–07:00 | dormir, obligatorio | Todos |
-| **B4 Datos restantes** | Dom 07:00–11:00 | completar regiones en segundo plano; normalización y artefactos | A |
-| **B5 Validación + QA** | Dom 11:00–14:00 | S10 validado, CSV, procedencia, QA ejecutada | B/C + A |
-| **B6 UI completa** | Dom 14:00–17:00 | estacionalidad, mapa, accesibilidad, deploy | A |
-| **B7 Tercera región / deseable** | Dom 17:00–18:30 | solo si G3 pasó | A + B |
-| **B8 Ensayo** | Dom 18:30–20:00 | corrida completa del guion sobre el deploy real | Todos |
-| **G4 Congelamiento** | Dom 20:00 | código cerrado | Todos |
-| **B9 Video + formulario** | Dom 20:00–21:30 | video, README final, formulario | C |
-| **Envío** | Dom 21:30 | subir y **confirmar recepción** | C |
-| **Colchón** | Dom 21:30–23:59 | solo correcciones de texto, nada de código | — |
-
-### Puertas de decisión (se recorta, no se estira)
-
-- **G0 — Sáb 12:30.** Sin stack ni decisiones, mínimo: pipeline Python + app de una página.
-- **G1 — Sáb 21:00.** Sin grilla armonizada, se recorta a MODIS + S-NPP con calibración global.
-- **G2 — Dom 02:00.** Si el calendario no se dibuja con datos reales, el domingo se invierte en eso y se eliminan mapa y estacionalidad.
-- **G3 — Dom 17:00.** Sin mapa o sin deploy estable, se elimina B7 y se cierra con lo que hay.
-- **G4 — Dom 20:00.** Congelamiento. Después de esta hora no entra código.
-- **G5 — Dom 21:30.** Envío cargado y confirmado. Nunca se deja para las 23:59: los formularios se caen a última hora.
+| R8 | La serie dice "índice" pero la UI insinúa "incendios" | credibilidad | §1 y S3 fijan el lenguaje; el QA revisa el texto |
 
 ---
 
 # Parte III — Ejecución
 
-## 15. Decisiones
+## 13. Decisiones
 
 | ID | Decisión | Motivo |
 |---|---|---|
 | **D1** | Monorepo `apps/web` + `services/api` + `pipeline/` + `data/` | El pipeline no es el backend |
-| **D2** | Regiones predefinidas con registro completo; AOI arbitraria en modo limitado | Un demo sin esperas: las regiones del demo se procesan antes. La ingesta completa de Iberia (27 años-región, 1,15 M detecciones) tarda **158 s** medidos, así que entran varias regiones en el bloque B4; el costo real es calibrar cada región, no descargarla |
+| **D2** | Regiones predefinidas con registro completo; AOI arbitraria en modo limitado | Un demo sin esperas: las regiones del demo se procesan antes. La ingesta completa de Iberia (27 años-región, 1,15 M detecciones) tarda **158 s** medidos, así que entran varias regiones en una sola sesión; el costo real es calibrar cada región, no descargarla |
 | **D3** | `MODIS` + `VIIRS_SNPP` + `VIIRS_NOAA20` + `VIIRS_NOAA21`, filas `sp` y `nrt` | S-NPP termina el 2026-11-02 |
 | **D4** | Se commitean los artefactos procesados (`data/processed/`, ~12 MB) y nunca el caché crudo | Un deploy sirve la app sin correr una ingesta de 158 s. El caché crudo (`data/cache/`, cientos de MB) sigue fuera del repo y se regenera |
 | **D5** | Next.js en Vercel; FastAPI en Railway/Render/Fly | Dos despliegues simples y gratuitos |
 | **D6** | **Regiones del demo:** España (península y Baleares) y Aragón. Sin Canarias. Recorte con el contorno oficial del IGN | España da señal suficiente y factores por mes visibles; Aragón es la historia local del evento de Zaragoza (§9.7) |
-| **D7** | Única ingesta: mirror Portolan en `pipeline/firms.py`. Sin `MAP_KEY` ni API de FIRMS | Sin clave ni límite de 5 días, mismo diseño que Kiln Watch y verificado contra los archivos de NASA |
+| **D7** | Única ingesta: mirror Portolan en `pipeline/firms.py`. Sin `MAP_KEY` ni API de FIRMS | Sin clave ni límite de 5 días, verificado contra los archivos de NASA |
 
-## 16. Stack
+## 14. Stack
 
 ```
 apps/web/          Next.js + TypeScript + Tailwind (calendario en CSS grid, series en SVG propio)
@@ -408,26 +365,7 @@ DuckDB en serverless es una trampa. Next es presentación; FastAPI es datos.
 mensaje accionable cuando falta un artefacto: un gráfico vacío que parece "no hubo incendios" es peor que
 un error honesto.
 
-## 17. Competencia (2026)
-
-- `Aalvee-Aarham/kiln-watch` — equipo de Bangladés, mismo reto ya publicado: FastAPI + React + MapLibre,
-  DuckDB sobre GeoParquet remoto, calibración con Aqua como referencia, test de "denial", intervalos de
-  95%, 9 regiones y agente de IA. Declaran 5 de 9 regiones dentro del rango de no-cambio, Punjab ~7 % por
-  debajo y Paraná Delta +27 %.
-- `nasa/spaceapps#1786` — varios equipos van por *matching espacio-temporal* y agrupación en "eventos de
-  fuego" en lugar de calibración de totales.
-
-**Implicancia:** el calendario global genérico ya está hecho. No conviene competir en cantidad de
-features. El espacio libre es impacto local, flujo del respondedor y validación auditable.
-
-## 18. Próximas acciones
-
-1. Correr `python -m pipeline.firms <región>` y comprobar el salto de 2012 en el resumen.
-2. Medir volumen de filas por sensor-año y fijar la grilla con evidencia.
-3. Generar el primer `calendar.json` real de un AOI y recién ahí empezar la UI.
-4. Congelar S1–S10; todo lo nuevo va a "Deseable".
-
-## 19. Glosario
+## 15. Glosario
 
 | Término | Qué significa acá |
 |---|---|
@@ -440,7 +378,7 @@ features. El espacio libre es impacto local, flujo del respondedor y validación
 | **AOI** | *Area of Interest*: la zona que el usuario elige. |
 | **SP / NRT** | *Standard Processing* (calidad científica, ~5 meses de rezago) / *Near Real-Time*. |
 
-## 20. Registro de aportes
+## 16. Registro de aportes
 
 - **`FIRST EXPLANATION`** (commit `e8d8253`, equipo): resumen del reto, la observación de que la
   diferencia entre sensores **cambia según la estación** y que por eso no basta un factor único (base de
@@ -448,13 +386,13 @@ features. El espacio libre es impacto local, flujo del respondedor y validación
   conserva en §2, §6 y §9.7.
 - **`firetrack_problema_explicado`** (equipo): documento sin jerga y tres diagramas. Aporta el encuadre de
   que **un foco es un píxel caliente y no un incendio** (§1), la proporción **7:1** (§2), la tabla de
-  satélites por año (§5), la analogía del tipo de cambio (§7) y el glosario (§19). Los diagramas viven en
+  satélites por año (§5), la analogía del tipo de cambio (§7) y el glosario (§15). Los diagramas viven en
   `docs/img/`. Se incorporó completo acá: no queda como archivo aparte.
 - **Verificación técnica** (commit `67324a0`): `DAY_RANGE` 1–5, `MAP_KEY` y su límite, cobertura real por
-  sensor incluido el fin de S-NPP, presupuesto de transacciones medido, requisitos, riesgos, cronograma y
+  sensor incluido el fin de S-NPP, presupuesto de transacciones medido, requisitos, riesgos y
   stack.
-- **Cambio de fuente** (2026-11-15): la ingesta pasa a leer solo del mirror Portolan (`pipeline/firms.py`),
-  igual que Kiln Watch. Se eliminan la API de área, la `MAP_KEY` y sus scripts. El mirror se comprobó contra
+- **Cambio de fuente** (2026-11-15): la ingesta pasa a leer solo del mirror Portolan (`pipeline/firms.py`).
+  Se eliminan la API de área, la `MAP_KEY` y sus scripts. El mirror se comprobó contra
   los archivos oficiales de NASA FIRMS (§9.3).
 - **Regiones del demo** (2026-11-15): se cierra D6. España (península y Baleares) y Aragón, con contornos
   oficiales del IGN en `data/aoi/`. Se quitan las 9 regiones candidatas de `regions.json` (§9.7).

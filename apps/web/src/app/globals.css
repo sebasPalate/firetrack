@@ -18,3 +18,14 @@ body {
 ::selection {
   background: rgba(56, 189, 248, 0.35);
 }
+
+/* The bars morph and the tour scrolls; people who ask their system for less motion get none of it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

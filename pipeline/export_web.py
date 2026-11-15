@@ -10,6 +10,7 @@ static host, e.g. Vercel):
     calendar/{region}.json            same payload as GET /calendar?region=
     method/{region}.json              same payload as GET /method?region=
     detections/{region}/{year}.csv    same rows as GET /detections, one file per year
+    aoi/{region}.geojson              official boundary, drawn as the outline of the hotspot map
 
 The payloads come from ``pipeline.payloads``, the code the API uses, so the static
 site and the API can never disagree.
@@ -51,6 +52,11 @@ def export_region(con, region: dict, data_dir: Path, out: Path) -> dict:
     payload = calendar_payload(region, [dict(zip(columns, row)) for row in rows])
     _write_json(out / "calendar" / f"{region['id']}.json", payload)
     shutil.copyfile(method_path, _ensure(out / "method" / f"{region['id']}.json"))
+
+    # The hotspot map draws the same boundary the detections were clipped to.
+    boundary = data_dir / "aoi" / f"{region['id']}.geojson"
+    if boundary.exists():
+        shutil.copyfile(boundary, _ensure(out / "aoi" / f"{region['id']}.geojson"))
 
     detections = out / "detections" / region["id"]
     if detections.exists():

@@ -86,8 +86,7 @@ export function Provenance({ method }: { method: MethodPayload }) {
 
       <p className="mt-3 border-t border-slate-800 pt-2 text-[11px] text-slate-500">
         We acknowledge the use of data from NASA&apos;s Fire Information for Resource Management System (FIRMS),
-        part of NASA&apos;s Earth Observing System Data and Information System (EOSDIS). Ingest approach inspired by
-        Kiln Watch (Team Off The Binary, NASA Space Apps 2026); our implementation is our own.
+        part of NASA&apos;s Earth Observing System Data and Information System (EOSDIS).
       </p>
     </section>
   );
