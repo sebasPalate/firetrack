@@ -1,0 +1,2 @@
+acq_datetime,acq_date,sensor,satellite,daynight,quality,version,type,confidence,confidence_pct,latitude,longitude,frp,scan,track,confidence_score
+2000-11-19 11:19:00,2000-11-19,MODIS,Terra,D,sp,6.03,0,39,39,41.8716,-0.3019,5.9,1.0,1.0,0.39

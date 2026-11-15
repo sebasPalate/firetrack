@@ -1,0 +1,317 @@
+{
+  "region": "spain",
+  "reference": "Aqua",
+  "primary": "Suomi-NPP",
+  "tail": "NOAA-20",
+  "bridge": "Terra",
+  "units": "harmonized activity index, in Aqua MODIS detections (not a fire count)",
+  "method": "H2: overlap-window calibration per calendar month, empirical-Bayes shrinkage",
+  "calibration": {
+    "pooled": 6.4312,
+    "monthly": {
+      "01": {
+        "factor": 5.4683,
+        "raw_ratio": 5.4462,
+        "viiRs": 4760,
+        "aqua": 874
+      },
+      "02": {
+        "factor": 5.48,
+        "raw_ratio": 5.4684,
+        "viiRs": 9001,
+        "aqua": 1646
+      },
+      "03": {
+        "factor": 6.5444,
+        "raw_ratio": 6.5453,
+        "viiRs": 15375,
+        "aqua": 2349
+      },
+      "04": {
+        "factor": 7.2047,
+        "raw_ratio": 7.219,
+        "viiRs": 7847,
+        "aqua": 1087
+      },
+      "05": {
+        "factor": 8.816,
+        "raw_ratio": 8.8899,
+        "viiRs": 5734,
+        "aqua": 645
+      },
+      "06": {
+        "factor": 7.1517,
+        "raw_ratio": 7.1614,
+        "viiRs": 10649,
+        "aqua": 1487
+      },
+      "07": {
+        "factor": 5.9167,
+        "raw_ratio": 5.9133,
+        "viiRs": 18000,
+        "aqua": 3044
+      },
+      "08": {
+        "factor": 6.251,
+        "raw_ratio": 6.2504,
+        "viiRs": 38121,
+        "aqua": 6099
+      },
+      "09": {
+        "factor": 6.7518,
+        "raw_ratio": 6.7551,
+        "viiRs": 13132,
+        "aqua": 1944
+      },
+      "10": {
+        "factor": 7.4558,
+        "raw_ratio": 7.4675,
+        "viiRs": 13001,
+        "aqua": 1741
+      },
+      "11": {
+        "factor": 6.066,
+        "raw_ratio": 6.0589,
+        "viiRs": 6174,
+        "aqua": 1019
+      },
+      "12": {
+        "factor": 5.5832,
+        "raw_ratio": 5.5629,
+        "viiRs": 4645,
+        "aqua": 835
+      }
+    },
+    "tail": {
+      "sensor": "NOAA-20",
+      "factor": 1.0236,
+      "note": "NOAA-20 counts divided by (monthly factor x this) to match Suomi-NPP"
+    },
+    "bridge": {
+      "sensor": "Terra",
+      "factor": 1.1552,
+      "terra": 24618,
+      "aqua": 21310
+    },
+    "shrink_k": 20.0,
+    "prior": null,
+    "overlap_first": "2012-02",
+    "calibration_last_year": 2025
+  },
+  "validation": {
+    "overlap_years": [
+      2012,
+      2013,
+      2014,
+      2015,
+      2016,
+      2017,
+      2018,
+      2019,
+      2020,
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ],
+    "per_year": {
+      "2012": {
+        "index": 2333.0,
+        "aqua": 2594.0,
+        "raw": 20175.0,
+        "error_pct": -10.1
+      },
+      "2013": {
+        "index": 1347.2,
+        "aqua": 1376.0,
+        "raw": 11654.0,
+        "error_pct": -2.1
+      },
+      "2014": {
+        "index": 1112.7,
+        "aqua": 1001.0,
+        "raw": 9620.0,
+        "error_pct": 11.2
+      },
+      "2015": {
+        "index": 1577.5,
+        "aqua": 1386.0,
+        "raw": 12682.0,
+        "error_pct": 13.8
+      },
+      "2016": {
+        "index": 1313.8,
+        "aqua": 1329.0,
+        "raw": 11322.0,
+        "error_pct": -1.1
+      },
+      "2017": {
+        "index": 2138.9,
+        "aqua": 2199.0,
+        "raw": 18907.0,
+        "error_pct": -2.7
+      },
+      "2018": {
+        "index": 752.3,
+        "aqua": 568.0,
+        "raw": 9894.0,
+        "error_pct": 32.5
+      },
+      "2019": {
+        "index": 1415.8,
+        "aqua": 1322.0,
+        "raw": 20525.0,
+        "error_pct": 7.1
+      },
+      "2020": {
+        "index": 1099.5,
+        "aqua": 992.0,
+        "raw": 16239.0,
+        "error_pct": 10.8
+      },
+      "2021": {
+        "index": 1205.7,
+        "aqua": 1166.0,
+        "raw": 18558.0,
+        "error_pct": 3.4
+      },
+      "2022": {
+        "index": 2553.7,
+        "aqua": 2634.0,
+        "raw": 38480.0,
+        "error_pct": -3.0
+      },
+      "2023": {
+        "index": 1129.2,
+        "aqua": 994.0,
+        "raw": 17459.0,
+        "error_pct": 13.6
+      },
+      "2024": {
+        "index": 775.2,
+        "aqua": 865.0,
+        "raw": 20572.0,
+        "error_pct": -10.4
+      },
+      "2025": {
+        "index": 4063.4,
+        "aqua": 4351.0,
+        "raw": 87611.0,
+        "error_pct": -6.6
+      }
+    },
+    "median_abs_error_pct": 10.1,
+    "worst_abs_error_pct": 32.5,
+    "raw_step_2011_to_2013_pct": 208.8,
+    "aqua_step_2011_to_2013_pct": -26.8,
+    "index_step_2011_to_2013_pct": -21.5,
+    "holdout": {
+      "train": [
+        "2012-02",
+        "2016-12"
+      ],
+      "test": [
+        "2017-01",
+        "2020-12"
+      ],
+      "months": 48,
+      "per_year": {
+        "2017": {
+          "index": 2156.2,
+          "aqua": 2199.0,
+          "raw_viirs": 14282.0,
+          "error_pct": -1.9
+        },
+        "2018": {
+          "index": 750.5,
+          "aqua": 568.0,
+          "raw_viirs": 4861.0,
+          "error_pct": 32.1
+        },
+        "2019": {
+          "index": 1479.6,
+          "aqua": 1322.0,
+          "raw_viirs": 8984.0,
+          "error_pct": 11.9
+        },
+        "2020": {
+          "index": 1092.5,
+          "aqua": 992.0,
+          "raw_viirs": 7044.0,
+          "error_pct": 10.1
+        }
+      },
+      "error_pct": 7.8,
+      "raw_error_pct": 592.2,
+      "median_abs_year_error_pct": 11.9,
+      "spearman_monthly": 0.943,
+      "calibration": {
+        "pooled": 6.4575,
+        "monthly": {
+          "01": {
+            "factor": 5.1502
+          },
+          "02": {
+            "factor": 5.2186
+          },
+          "03": {
+            "factor": 5.7695
+          },
+          "04": {
+            "factor": 7.5368
+          },
+          "05": {
+            "factor": 7.0776
+          },
+          "06": {
+            "factor": 6.9414
+          },
+          "07": {
+            "factor": 6.3179
+          },
+          "08": {
+            "factor": 7.3812
+          },
+          "09": {
+            "factor": 6.5421
+          },
+          "10": {
+            "factor": 7.0247
+          },
+          "11": {
+            "factor": 5.8147
+          },
+          "12": {
+            "factor": 6.5116
+          }
+        }
+      }
+    }
+  },
+  "coverage": {
+    "first_month": "2000-11",
+    "last_month": "2026-11"
+  },
+  "boundary": {
+    "in_bbox": 809205,
+    "in_boundary": 428290,
+    "geometry": "data/aoi/spain.geojson"
+  },
+  "artifacts": {
+    "calendar": "data/processed/calendar/spain.parquet",
+    "hotspots": "data/processed/hotspots/spain.parquet"
+  },
+  "rows": 312,
+  "limitations": [
+    "An index is comparable across years; it is not a count of fires.",
+    "One VIIRS at a time: NOAA-20 and NOAA-21 are used only to fill the record, never added to the sum.",
+    "One factor per calendar month, day and night together: splitting them multiplied the variance by three on this region.",
+    "Months flagged partial have fewer observing days than the month is long and should not be read as anomalies.",
+    "Years flagged provisional are served but excluded from calibration: they still mix near-real-time rows, so their level is less trustworthy than the fitted years.",
+    "Aqua is the reference from 2002-07; Terra covers 2000-11 to 2002-06 through its own overlap factor.",
+    "The last year mixes near-real-time rows and is excluded from calibration, so its values are provisional.",
+    "Detections are clipped to the official boundary; a fire on the border counts only on the side its pixel centre falls.",
+    "Aqua's orbit drifts later in the afternoon after 2022, so overlap years from 2023 compare VIIRS with a slowly changing reference."
+  ]
+}
