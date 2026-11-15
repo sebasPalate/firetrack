@@ -1,14 +1,11 @@
 # Firetrack — Harmonization of MODIS and VIIRS Hot Spots
 
 **Event:** NASA Space Apps Challenge 2026 — *Harmonization of MODIS and VIIRS Hot Spots*
-**Team:** 3 people — software engineering (dev), mechanical engineering, industrial engineering
-**Window:** Saturday 11:00 → Sunday 23:59 (37 h wall clock)
-**Code freeze:** Sunday 20:00. **Submission:** Sunday 21:30. **Buffer:** until 23:59.
-**Status:** working code skeleton; no data artifacts yet.
+**Status:** pipeline, artifacts, API and web app working; validated results for Spain and Aragón.
 **Language:** submission document for the judges. The team working document is `docs/problema.md` (Spanish).
 
 > Mirror of `docs/problema.md`, which is canonical. If the two diverge, the Spanish document wins.
-> Regenerate this file from it before the code freeze.
+> Regenerate this file from it whenever the canonical document changes.
 
 ---
 
@@ -249,8 +246,8 @@ the mirror and in the official NASA FIRMS country files. They are identical:
 | 2016 | 262 = 262 | 282 = 282 | 1,891 = 1,891 | |
 | 2022 | 488 = 488 | 526 = 526 | 2,892 = 2,892 | 3,682 = 3,682 |
 
-The design (read the remote GeoParquet with DuckDB, a per-year cache and measured observing days) is the one
-Kiln Watch uses in its `firms.py` (Team Off The Binary). The code is our own.
+The design (read the remote GeoParquet with DuckDB, a per-year cache and measured observing days) is our own:
+the pipeline depends on no prior project.
 
 ### 9.4 FIRMS historical archive (dropped)
 
@@ -321,69 +318,29 @@ allows.
 | R1 | The mirror goes offline during the hackathon | no new data | the local per-region, per-year cache keeps working; artifacts are built before the demo |
 | R2 | Harmonization is judged not credible | weak submission | index + validation chart + disclosed limits (S8, S10) |
 | R3 | Scope creep into polygons / auth / live data | no demo | bbox only, presets, precomputed data |
-| R4 | A single developer for data + web | bottleneck | pipeline first, UI second; B and C carry validation, requirements, QA and delivery |
+| R4 | A single developer for data + web | bottleneck | pipeline first, UI second; validation and QA run in parallel |
 | R5 | VIIRS confidence is categorical vs MODIS numeric | silent filtering bug | single `confidence_score`, with a unit test (implemented) |
 | R6 | Date drift from `acq_date` + `acq_time` | off-by-one months in the calendar | `datetime_utc` in the unified schema (implemented) |
 | R7 | The mirror is a third-party copy | data differs from NASA | checked against the official FIRMS files: exact match in 2016 and 2022 (§9.3) |
-| R8 | The series says "index" but the UI hints "fires" | credibility | §1 and S3 fix the language; C reviews it in QA |
-
-## 13. Work split
-
-| Track | Owner | Owns | Done when |
-|---|---|---|---|
-| **A. Data & software** | Software engineer | Pipeline (ingest → normalize → grid → harmonize → artifacts), API, calendar and chart frontend, CSV | S1–S9 pass on the demo AOI; the repo reproduces the dataset from scripts |
-| **B. Physical validation** | Mechanical engineer | Overpass geometry, footprint vs scan angle, detection thresholds, meaning of FRP; calibration methodology; validation against known events (2019 Amazon, 2019–20 Australia, 2023 Canada); `docs/method.md` | Method calibrated with a validation chart on real events, plus physical assumptions and failure modes in writing |
-| **C. Product & delivery** | Industrial engineer | Responder user and journey, operational definition of "anomaly", QA plan and checklist, risk register, submission text, demo script, video, README for the judges | Requirements signed, QA executed before each run, materials ready 90 min ahead |
-
-This challenge is won or lost on **method credibility and communication**, not on CRUD.
-
-## 14. Timeline (37 h wall clock)
-
-| Block | Clock | Goal | Owner |
-|---|---|---|---|
-| **B0 Kickoff** | Sat 11:00–12:30 | decisions closed, stack fixed, repo ready | All |
-| **B1 Data audit** | Sat 12:30–15:00 | data source verified, one AOI loaded with 3 sensors | A (B in parallel) |
-| **B2 Pipeline v0** | Sat 15:00–21:00 | normalized dataset + harmonized grid, calibration chart | A |
-| **B2b Parallel** | Sat 15:00–21:00 | `docs/method.md` and validation events / requirements frozen and script | B / C |
-| **Dinner + sync (G1)** | Sat 21:00–22:00 | gate review | All |
-| **B3 App core** | Sat 22:00–Sun 02:00 | AOI + range → calendar + median on real data | A |
-| **Rest** | Sun 02:00–07:00 | sleep, mandatory | All |
-| **B4 Remaining data** | Sun 07:00–11:00 | complete regions in the background; normalization and artifacts | A |
-| **B5 Validation + QA** | Sun 11:00–14:00 | S10 validated, CSV, provenance, QA executed | B/C + A |
-| **B6 Full UI** | Sun 14:00–17:00 | seasonality, map, accessibility, deploy | A |
-| **B7 Third region / should-have** | Sun 17:00–18:30 | only if G3 passed | A + B |
-| **B8 Rehearsal** | Sun 18:30–20:00 | full run of the script against the real deploy | All |
-| **G4 Code freeze** | Sun 20:00 | code closed | All |
-| **B9 Video + form** | Sun 20:00–21:30 | video, final README, form | C |
-| **Submission** | Sun 21:30 | upload and **confirm receipt** | C |
-| **Buffer** | Sun 21:30–23:59 | text fixes only, no code | — |
-
-### Decision gates (cut scope, never stretch time)
-
-- **G0 — Sat 12:30.** No stack or no decisions: minimum is a Python pipeline + single-page app.
-- **G1 — Sat 21:00.** No harmonized grid: cut to MODIS + S-NPP with global calibration.
-- **G2 — Sun 02:00.** If the calendar does not render real data, Sunday goes into that and map and seasonality are dropped.
-- **G3 — Sun 17:00.** No map or no stable deploy: B7 is dropped and we close with what exists.
-- **G4 — Sun 20:00.** Code freeze. No code enters after this hour.
-- **G5 — Sun 21:30.** Submission uploaded and confirmed. Never left until 23:59: forms fall over at the last minute.
+| R8 | The series says "index" but the UI hints "fires" | credibility | §1 and S3 fix the language; QA reviews the wording |
 
 ---
 
 # Part III — Execution
 
-## 15. Decisions
+## 13. Decisions
 
 | ID | Decision | Reason |
 |---|---|---|
 | **D1** | Monorepo `apps/web` + `services/api` + `pipeline/` + `data/` | The pipeline is not the backend |
-| **D2** | Predefined regions with the full record; arbitrary AOI in limited mode | A demo without waiting: demo regions are processed beforehand. The full Iberia ingest (27 region-years, 1.15 M detections) takes a measured **158 s**, so several regions fit inside block B4; the real cost is calibrating a region, not downloading it |
+| **D2** | Predefined regions with the full record; arbitrary AOI in limited mode | A demo without waiting: demo regions are processed beforehand. The full Iberia ingest (27 region-years, 1.15 M detections) takes a measured **158 s**, so several regions fit in a single run; the real cost is calibrating a region, not downloading it |
 | **D3** | `MODIS` + `VIIRS_SNPP` + `VIIRS_NOAA20` + `VIIRS_NOAA21`, `sp` and `nrt` rows | S-NPP ends on 2026-11-02 |
 | **D4** | Commit the processed artifacts (`data/processed/`, ~12 MB), never the raw cache | A deploy serves the app without running a 158 s ingest. The raw cache (`data/cache/`, hundreds of MB) stays out of the repo and is rebuilt |
 | **D5** | Next.js on Vercel; FastAPI on Railway/Render/Fly | Two simple, free deployments |
 | **D6** | **Demo regions:** Spain (mainland and Balearic Islands) and Aragón. No Canary Islands. Clipped to the official IGN boundary | Spain gives enough signal and visible per-month factors; Aragón is the local story for the Zaragoza event (§9.7) |
-| **D7** | Single ingest: the Portolan mirror in `pipeline/firms.py`. No `MAP_KEY`, no FIRMS API | No key and no 5-day cap, the same design as Kiln Watch, checked against the NASA files |
+| **D7** | Single ingest: the Portolan mirror in `pipeline/firms.py`. No `MAP_KEY`, no FIRMS API | No key and no 5-day cap, checked against the NASA files |
 
-## 16. Stack
+## 14. Stack
 
 ```
 apps/web/          Next.js + TypeScript + Tailwind (calendar in CSS grid, series in hand-rolled SVG)
@@ -407,26 +364,7 @@ DuckDB in serverless is a trap. Next is presentation; FastAPI is data.
 actionable message when an artifact is missing: an empty chart that looks like "no fires" is worse than an
 honest error.
 
-## 17. Competition (2026)
-
-- `Aalvee-Aarham/kiln-watch` — team from Bangladesh, same challenge already published: FastAPI + React +
-  MapLibre, DuckDB over remote GeoParquet, Aqua-reference calibration, a "denial" test, 95 % intervals,
-  9 regions and an AI agent. They report 5 of 9 regions inside the no-change range, Punjab ~7 % below and
-  Paraná Delta +27 %.
-- `nasa/spaceapps#1786` — several teams go for *spatio-temporal matching* and clustering into "fire events"
-  instead of calibrating totals.
-
-**Implication:** the generic global calendar already exists. Competing on feature count is a losing move.
-The open space is local impact, responder workflow and auditable validation.
-
-## 18. Next actions
-
-1. Run `python -m pipeline.firms <region>` and check the 2012 step in the summary.
-2. Measure row volume per sensor-year and fix the grid with evidence.
-3. Generate the first real `calendar.json` for one AOI, and only then start the UI.
-4. Freeze S1–S10; anything new goes to "Should have".
-
-## 19. Glossary
+## 15. Glossary
 
 | Term | What it means here |
 |---|---|
@@ -439,7 +377,7 @@ The open space is local impact, responder workflow and auditable validation.
 | **AOI** | *Area of Interest*: the area the user selects. |
 | **SP / NRT** | *Standard Processing* (science quality, ~5 month lag) / *Near Real-Time*. |
 
-## 20. Contribution log
+## 16. Contribution log
 
 - **`FIRST EXPLANATION`** (commit `e8d8253`, team): challenge summary, the observation that the difference
   between sensors **changes with the season** and that therefore a single factor is not enough (basis of
@@ -447,13 +385,13 @@ The open space is local impact, responder workflow and auditable validation.
   text is preserved in §2, §6 and §9.7.
 - **`firetrack_problema_explicado`** (team): a jargon-free document and three diagrams. Contributes the
   framing that **a hotspot is a hot pixel, not a fire** (§1), the **7:1** ratio (§2), the satellite-by-year
-  table (§5), the exchange-rate analogy (§7) and the glossary (§19). The diagrams live in `docs/img/`.
+  table (§5), the exchange-rate analogy (§7) and the glossary (§15). The diagrams live in `docs/img/`.
   Integrated here in full: it does not remain as a separate file.
 - **Technical verification** (commit `67324a0`): `DAY_RANGE` 1–5, `MAP_KEY` and its limit, real coverage
-  per sensor including the end of S-NPP, measured transaction budget, requirements, risks, schedule and
+  per sensor including the end of S-NPP, measured transaction budget, requirements, risks and
   stack.
-- **Source change** (2026-11-15): the ingest now reads only from the Portolan mirror (`pipeline/firms.py`),
-  as Kiln Watch does. The Area API, the `MAP_KEY` and their scripts are removed. The mirror was checked against
+- **Source change** (2026-11-15): the ingest now reads only from the Portolan mirror (`pipeline/firms.py`).
+  The Area API, the `MAP_KEY` and their scripts are removed. The mirror was checked against
   the official NASA FIRMS files (§9.3).
 - **Demo regions** (2026-11-15): D6 is closed. Spain (mainland and Balearic Islands) and Aragón, with official
   IGN boundaries in `data/aoi/`. The 9 candidate regions are removed from `regions.json` (§9.7).

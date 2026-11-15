@@ -6,16 +6,33 @@ just telling me that a new satellite turned on?*
 
 NASA Space Apps Challenge 2026 — [*Harmonization of MODIS and VIIRS Hot Spots*](https://www.spaceappschallenge.org/).
 
+<p align="center">
+  <a href="https://sebaspalate.github.io/firetrack/"><img src="https://img.shields.io/badge/Live%20demo-open-FF9A3C?style=for-the-badge" alt="Live demo"></a>
+  <a href="#the-proof"><img src="https://img.shields.io/badge/Method%20%26%20results-read-58A6FF?style=for-the-badge" alt="Method and results"></a>
+  <a href="docs/problem.md"><img src="https://img.shields.io/badge/Full%20write--up-English-3DDC97?style=for-the-badge" alt="Full write-up in English"></a>
+</p>
+
+<p align="center">
+  <img src="docs/readme/hero.png" alt="Raw satellite hotspot counts jump when new satellites arrive; the harmonized record stays level" width="100%">
+</p>
+
+<p align="center"><sub><b>26 years</b> · 2000-11 to today &nbsp;|&nbsp; <b>5 satellites</b> · Terra, Aqua, S-NPP, NOAA-20, NOAA-21 &nbsp;|&nbsp; <b>2 sensors</b> · MODIS 1 km, VIIRS 375 m &nbsp;|&nbsp; <b>3.5 %</b> median error against Aqua &nbsp;|&nbsp; <b>2 demo regions</b> · Spain, Aragón</sub></p>
+
 **Status:** working end to end. Ingest (Portolan GeoParquet mirror of NASA FIRMS, no key), harmonization
 clipped to the official boundary, artifacts, static export, API and web client all run. Demo regions:
 `spain` (mainland and Balearic Islands) and `aragon`, whose factors borrow Spain's seasonal shape. The
 figures below were measured on the earlier Iberia box and are redrawn by `python -m pipeline.charts`.
 
-![Raw yearly hotspot counts (top) against the harmonized index (bottom) for Iberia: the raw series jumps in 2012 and inflates 2024, the index follows the fires](docs/img/salto_2012.svg)
-
 ---
 
-## 1. Why this is not a plotting exercise
+## The problem, in one picture
+
+The camera changed twice and the record moved both times. The only question worth asking is whether the
+fires moved with it.
+
+![Raw yearly hotspot counts (top) against the harmonized index (bottom) for Iberia: the raw series jumps in 2012 and inflates 2024, the index follows the fires](docs/img/salto_2012.svg)
+
+### Why this is not a plotting exercise
 
 A satellite does not see fires. It sees **pixels that are hotter than their surroundings**, and each one
 counts as a hotspot. One large fire can light up dozens of pixels; a small stubble burn may light up one,
@@ -46,7 +63,7 @@ burning season VIIRS sees thousands of small fires that MODIS never detects.
 
 ![Monthly correction factors measured on Iberia: 4.8 in February, 8.7 in May, pooled 5.87](docs/img/factor_por_mes.svg)
 
-## 2. The method
+## The method
 
 Think of it as an exchange rate between two currencies:
 
@@ -71,7 +88,245 @@ S-NPP stopped on 2026-11-02, with its own measured factor. Summing satellites is
 **What the output is:** a **harmonized activity index**, not a count of fires. The UI always says so.
 The native per-sensor counts stay available in the CSV export.
 
-## 3. Data
+## The proof
+
+The index is measured against the camera that saw both eras, and the record is rebuilt with a satellite
+taken away to see whether it survives without it.
+
+When Suomi-NPP changes the camera, the raw count and the index disagree about what happened:
+
+| 2011 → 2013 step | Change |
+|---|---|
+| Raw VIIRS counts | **+202.6 %** |
+| Harmonized index | **−25.9 %** |
+| Aqua MODIS itself | **−24.6 %** |
+
+The index tracks the ground; the raw count tracks the camera.
+
+Against Aqua through the overlap on Iberia (**2012-02 → 2025**), the index lands at a median \|error\| of
+**3.5 %**, worst **12.6 %**.
+
+### How we check it
+
+- **Unit tests** pin the silent failure modes: the area filter and the cache rule (a wrong box or a stale
+  year means missing detections), confidence handling (MODIS `0–100` versus VIIRS `l/n/h`), and the
+  harmonizer's shrinkage, source preference, partial-month rule and artifact contract.
+- **Source check:** the mirror must match the official NASA FIRMS files on a test area (done for 2016 and
+  2022, see the Data section below).
+- **Correction test:** rebuild the record from VIIRS alone and check it against what Aqua actually observed.
+
+## Where this still falls short
+
+We publish these, not hide them.
+
+- **The recent tail is provisional.** Science-quality rows (`quality = 'sp'`) replace near-real-time rows
+  (`'nrt'`) about three to four months later, and S-NPP stopped on 2026-11-02, so the last months rest on
+  NOAA-20 and NOAA-21 with their own measured factor.
+- **Partial months are never the baseline.** They are served but kept out of the per-month median, so the
+  running month can never set the yardstick it is compared against.
+- **The worst month is not 3.5 % off, it is 12.6 %.** The median is the honest summary; the tail is where
+  the method under- or over-corrects, and those regions are listed in the artifacts rather than smoothed
+  away.
+- **Two regions, one borrowed shape.** Aragón has about 40 to 60 vegetation detections a year, so its
+  seasonal factors shrink towards Spain's instead of claiming a shape of its own.
+- **Boundaries are a choice.** The Canary Islands are excluded (a different fire regime 1,000 km away, and
+  the 2021 La Palma eruption adds about 31,000 detections that FIRMS types as vegetation). Ceuta and
+  Melilla are excluded too.
+- **An index is not a fire inventory.** Detections are pixels, not fires and not burned area.
+
+## The product
+
+<p align="center">
+  <img src="docs/readme/product.png" alt="The Firetrack dashboard: burning calendar, hotspot map and method panels on one screen" width="100%">
+</p>
+
+The client ships no charting or map library: the calendar is a CSS grid, the series are inline SVG, and
+the hotspot map is inline SVG drawn on the same official boundary the detections were clipped to, so it
+works offline at a demo.
+
+- **The calendar** is a CSS grid: every cell is a month in the same units, with the count, the anomaly and
+  the partial/provisional flag.
+- **The series** are inline SVG, drawn from the artifacts, with error whiskers from the year the overlap
+  starts.
+- **The map** puts every hotspot on the official boundary, so the box you picked and the fires you see are
+  the same place.
+- **The view is the URL** (`?region=aragon&year=2024&month=8&series=compare`), so any state can be shared
+  as a link.
+- **The export** is the native per-sensor CSV behind whatever you are looking at.
+
+## Who it is for
+
+| For a fire manager | For an analyst |
+|---|---|
+| **Is this month unusual?** Compare it against 26 years of the same calendar month, in the same units, not against a period where the camera was different. | **Can I compare 2005 with 2024?** Yes, and the method, the factors and the validation statistics download with the series. |
+| **Aragón** is the local case: few detections, so its shape borrows Spain's instead of inventing one. | **Spain** is the full-calendar case: enough detections for every month, and a VIIRS/Aqua ratio that really varies (day 3.4 to 5.6). |
+
+## How it is built
+
+```mermaid
+flowchart TD
+  F[("NASA FIRMS<br/>MODIS C6.1 + VIIRS 375 m")]
+  M["Portolan GeoParquet mirror<br/>CC0, one file per year<br/>DuckDB reads only the region's row groups"]
+  P["pipeline/<br/>firms → normalize → harmonize<br/>calibration and artifacts"]
+  D[("data/processed/<br/>Parquet artifacts, committed<br/>so a deploy needs no 158 s ingest")]
+  A["services/api/<br/>FastAPI + DuckDB, read-only"]
+  W["apps/web/<br/>Next.js + Tailwind<br/>hand-rolled SVG and CSS grid"]
+  F -->|"pipeline only, never at request time"| M
+  M --> P
+  P --> D
+  D --> A
+  D --> W
+  A -.->|"only when NEXT_PUBLIC_API_BASE is set"| W
+```
+
+Three deliberate boundaries:
+
+- **The API never reads FIRMS or the mirror.** It serves precomputed artifacts only.
+- **The pipeline is not the backend.** Merging them puts pandas and the whole ETL inside the API image.
+- **Next.js is presentation only.** No DuckDB in serverless functions; the data layer stays in FastAPI.
+
+## Repository layout
+
+```
+apps/web/      Next.js client: calendar, panels, CSV download
+services/api/  FastAPI service and the artifact contract
+pipeline/      ingest, normalizer, harmonizer, tests
+data/          demo regions, official boundaries, artifacts
+docs/          write-ups, generated figures, README artwork
+.github/       CI, the data build and the Pages deploy
+```
+
+<details>
+<summary><code>apps/web/</code> — presentation only, no data layer</summary>
+
+<br>
+
+```
+src/app/         layout.tsx, page.tsx, globals.css: shell, dark theme, Tailwind entry
+src/components/  Dashboard holds the state, the URL sync and the controls; one file
+                 per panel: CalendarHeatmap, MonthlySeries, YearlyTotals,
+                 Seasonality, MapPanel, DetailPanel, Validation, Provenance,
+                 TimeControls, GuidedTour
+src/lib/         the contract and the plumbing: types.ts, api.ts, urlState.ts,
+                 geo.ts, detections.ts, colors.ts, format.ts
+public/data/     the static export the browser reads (regions, calendar, method, CSV)
+```
+
+</details>
+
+<details>
+<summary><code>services/api/</code> — read-only, artifacts only</summary>
+
+<br>
+
+```
+main.py            FastAPI app: /health, /regions, /calendar, /detections, /method
+requirements.txt
+```
+
+</details>
+
+<details>
+<summary><code>pipeline/</code> — the work that only runs offline</summary>
+
+<br>
+
+```
+firms.py           ingest: Portolan mirror, per region and year cache, sensor days
+normalize.py       sensor-agnostic schema, confidence and acquisition time
+harmonize.py       calibration, monthly index, validation, artifact writer
+payloads.py        the response contract shared by the API and the static export
+regions.py         data/regions.json and the boundaries, point-in-polygon clip
+export_web.py      static JSON and CSV for the web app
+charts.py          the three figures in docs/img
+env.py             settings and cache paths
+tests/             one file per silent failure mode: firms, regions, normalize,
+                   harmonize, payloads
+```
+
+</details>
+
+<details>
+<summary><code>data/</code> — what is committed and what is rebuilt</summary>
+
+<br>
+
+```
+regions.json          demo regions (Spain, Aragón), shared by pipeline and API
+aoi/                  official boundaries as GeoJSON (IGN via geoBoundaries, CC BY 4.0)
+processed/            Parquet artifacts and method.json (committed, ~12 MB)
+cache/                mirror reads, one Parquet per region and year (gitignored)
+sensor_days.parquet   observing days per satellite (gitignored)
+```
+
+</details>
+
+<details>
+<summary><code>docs/</code> and <code>.github/</code></summary>
+
+<br>
+
+```
+docs/problema.md      canonical document, Spanish
+docs/problem.md       full mirror, English
+docs/img/             the three figures, redrawn by python -m pipeline.charts
+docs/readme/          hero.png and product.png, hand-made
+
+.github/workflows/    ci.yml runs the pipeline tests and the web lint and build;
+                      build-data.yml rebuilds the artifacts and opens a PR;
+                      deploy-pages.yml ships the static site
+```
+
+</details>
+
+<details>
+<summary><b>Run it</b> (Python 3.13, Node 22)</summary>
+
+<br>
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r pipeline\requirements.txt -r services\api\requirements.txt
+```
+
+No key and no `.env` are needed. The first run downloads the DuckDB `spatial` and `httpfs` extensions and
+the global sensor-days table (three columns per year, once):
+
+```powershell
+python -m pipeline.firms spain --dry-run
+python -m pipeline.firms spain --from-year 2016 --to-year 2016
+python -m pipeline.firms spain aragon
+python -m pipeline.harmonize spain
+python -m pipeline.harmonize aragon --prior-region spain
+python -m pipeline.export_web
+```
+
+The full Iberia ingest takes about 158 s and the harmonization a few seconds; both are resumable per year.
+The summary printed by the ingest already shows the problem: the detection count per year jumps in 2012,
+when Suomi-NPP joins. The harmonizer prints the factor table and the validation instead.
+
+| Command | Purpose |
+|---|---|
+| `python -m pipeline.tests.test_firms` | bounding box, query and cache freshness (pure) |
+| `python -m pipeline.tests.test_regions` | demo regions, boundary files and point-in-polygon (pure) |
+| `python -m pipeline.tests.test_normalize` | confidence and time normalization (pure) |
+| `python -m pipeline.tests.test_harmonize` | shrinkage, source preference, partial months, artifact contract |
+| `python -m pipeline.firms` | ingest both demo regions (`spain`, `aragon`), resumable |
+| `python -m pipeline.harmonize <region>` | build `data/processed/` for one region, clipped to its official boundary |
+| `python -m pipeline.harmonize aragon --prior-region spain` | small region: monthly factors shrink towards Spain's |
+| `python -m pipeline.export_web` | write `apps/web/public/data/` (static JSON, yearly CSV and the boundary outline) for every built region |
+| `python -m pipeline.charts` | redraw `docs/img/salto_2012.svg` and `factor_por_mes.svg` from the artifacts |
+| `cd services\api; uvicorn main:app --reload` | API on <http://localhost:8000/docs> |
+| `cd apps\web; npm install; npm run dev` | client on <http://localhost:3000>; reads `public/data/` (static), or the API when `NEXT_PUBLIC_API_BASE` is set |
+| `cd apps\web; npm run build` | production build; the page is static, the data is fetched in the browser |
+
+</details>
+
+<details>
+<summary><b>Data</b></summary>
+
+<br>
 
 All hotspot data comes from **[NASA FIRMS](https://firms.modaps.eosdis.nasa.gov/)** (Fire Information for
 Resource Management System), read through the
@@ -126,96 +381,12 @@ simplified to about 300 m), so the box around Spain does not count fires in Port
 Canary Islands are left out: a different fire regime 1,000 km away, and the 2021 La Palma eruption adds about
 31,000 detections that FIRMS types as vegetation. Ceuta and Melilla are left out too.
 
-## 4. Architecture
+</details>
 
-```
-NASA FIRMS ──► Portolan GeoParquet mirror (CC0, one file per year)
-        │       read in place with DuckDB, only the region's row groups
-        │  (pipeline only, never at request time)
-        ▼
-   pipeline/          firms (ingest) → normalize → harmonize (calibration, artifacts)
-        │
-        ▼
-   data/processed/    Parquet artifacts, committed so a deploy needs no 158 s ingest
-        │
-        ▼
-   services/api/      FastAPI + DuckDB, read-only
-        │
-        ▼
-   apps/web/          Next.js + Tailwind; charts are hand-rolled SVG and CSS grid
-```
+<details>
+<summary><b>API</b></summary>
 
-The client ships no charting or map library: the calendar is a CSS grid, the series are inline SVG. One map
-layer of hotspots is listed as a "should have" in the problem document and is not built.
-
-Three deliberate boundaries:
-
-- **The API never reads FIRMS or the mirror.** It serves precomputed artifacts only.
-- **The pipeline is not the backend.** Merging them puts pandas and the whole ETL inside the API image.
-- **Next.js is presentation only.** No DuckDB in serverless functions; the data layer stays in FastAPI.
-
-## 5. Repository layout
-
-```
-apps/web/              Next.js client: calendar, panels, CSV download
-  src/lib/             artifact types, API client, colour ramps and formatting
-  src/components/      Dashboard shell and one component per panel
-services/api/          FastAPI service and the artifact contract
-pipeline/              ingest, normalizer, harmonizer, tests
-  firms.py             ingest: Portolan mirror, per region and year cache, sensor days
-  regions.py           loads data/regions.json and the boundaries, point-in-polygon clip
-  normalize.py         sensor-agnostic schema, confidence and acquisition time
-  harmonize.py         calibration, monthly index, validation, artifact writer
-  charts.py            the two figures in docs/img, drawn from the artifacts
-  export_web.py        static JSON and CSV for the web app, from the artifacts
-data/regions.json      demo regions (Spain, Aragón), shared by pipeline and API
-data/aoi/              official boundaries as GeoJSON (IGN via geoBoundaries, CC BY 4.0)
-data/cache/            mirror reads, one Parquet per region and year (gitignored)
-data/sensor_days.parquet  observing days per satellite (gitignored)
-data/processed/        Parquet artifacts and method.json (committed, ~12 MB)
-docs/                  problem definition in Spanish and English, diagrams
-```
-
-## 6. Quickstart
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r pipeline\requirements.txt -r services\api\requirements.txt
-```
-
-No key and no `.env` are needed. The first run downloads the DuckDB `spatial` and `httpfs` extensions and
-the global sensor-days table (three columns per year, once):
-
-```powershell
-python -m pipeline.firms spain --dry-run
-python -m pipeline.firms spain --from-year 2016 --to-year 2016
-python -m pipeline.firms spain aragon
-python -m pipeline.harmonize spain
-python -m pipeline.harmonize aragon --prior-region spain
-python -m pipeline.export_web
-```
-
-The full Iberia ingest takes about 158 s and the harmonization a few seconds; both are resumable per year.
-The summary printed by the ingest already shows the problem: the detection count per year jumps in 2012,
-when Suomi-NPP joins. The harmonizer prints the factor table and the validation instead.
-
-| Command | Purpose |
-|---|---|
-| `python -m pipeline.tests.test_firms` | bounding box, query and cache freshness (pure) |
-| `python -m pipeline.tests.test_regions` | demo regions, boundary files and point-in-polygon (pure) |
-| `python -m pipeline.tests.test_normalize` | confidence and time normalization (pure) |
-| `python -m pipeline.tests.test_harmonize` | shrinkage, source preference, partial months, artifact contract |
-| `python -m pipeline.firms` | ingest both demo regions (`spain`, `aragon`), resumable |
-| `python -m pipeline.harmonize <region>` | build `data/processed/` for one region, clipped to its official boundary |
-| `python -m pipeline.harmonize aragon --prior-region spain` | small region: monthly factors shrink towards Spain's |
-| `python -m pipeline.export_web` | write `apps/web/public/data/` (static JSON and yearly CSV) for every built region |
-| `python -m pipeline.charts` | redraw `docs/img/salto_2012.svg` and `factor_por_mes.svg` from the artifacts |
-| `cd services\api; uvicorn main:app --reload` | API on <http://localhost:8000/docs> |
-| `cd apps\web; npm install; npm run dev` | client on <http://localhost:3000>; reads `public/data/` (static), or the API when `NEXT_PUBLIC_API_BASE` is set |
-| `cd apps\web; npm run build` | production build; the page is static, the data is fetched in the browser |
-
-## 7. API
+<br>
 
 | Endpoint | Returns |
 |---|---|
@@ -233,27 +404,16 @@ Missing artifacts return `503` with an actionable message. An empty chart that l
 worse than an honest error. `partial` months and `provisional` years are served but kept out of the
 per-month median, so the running month can never set the baseline it is compared against.
 
-## 8. Quality gates
+</details>
 
-- **Unit tests** pin the silent failure modes: the area filter and the cache rule (a wrong box or a stale
-  year means missing detections), confidence handling (MODIS `0–100` versus VIIRS `l/n/h`), and the
-  harmonizer's shrinkage, source preference, partial-month rule and artifact contract.
-- **Source check:** the mirror must match the official NASA FIRMS files on a test area (done for 2016 and
-  2022, see §3).
-- **Measured result (Iberia, calibrated 2012-02 → 2025):** median \|error\| against Aqua in the overlap
-  **3.5 %**, worst 12.6 %. The 2011 → 2013 step is **+202.6 % raw**, **−25.9 % on the index** and **−24.6 %
-  on Aqua itself**: the index tracks the ground, the raw count tracks the camera.
-- **Correction test:** rebuild the record from VIIRS alone and check it against what Aqua actually observed.
-- **Published limitations:** regions where the method under- or over-corrects are listed, not hidden.
-
-## 9. Documentation
+## Documentation
 
 | Document | Language | Purpose |
 |---|---|---|
-| [`docs/problema.md`](docs/problema.md) | Spanish | canonical document: the problem in plain words, method, data, requirements, risks, schedule |
+| [`docs/problema.md`](docs/problema.md) | Spanish | canonical document: the problem in plain words, method, data, requirements, risks |
 | [`docs/problem.md`](docs/problem.md) | English | full mirror of the canonical document, for the judges and the submission |
 
-## 10. Attribution
+## Attribution
 
 Hotspot data: NASA FIRMS / LANCE, MODIS Collection 6.1 and VIIRS 375 m active fire products.
 Region boundaries: Instituto Geografico Nacional (IGN), via geoBoundaries (https://www.geoboundaries.org/),
@@ -264,8 +424,3 @@ Read through the Portolan mirror of FIRMS on Source Cooperative (CC0):
 We acknowledge the use of data and/or imagery from NASA's Fire Information for Resource Management System
 (FIRMS) (https://earthdata.nasa.gov/firms), part of NASA's Earth Observing System Data and Information
 System (EOSDIS).
-
-The ingest approach (remote GeoParquet read in place with DuckDB, a per-year cache and a measured
-sensor-days table) follows the one published by Kiln Watch (Team Off The Binary, NASA Space Apps 2026,
-<https://github.com/Aalvee-Aarham/kiln-watch>). Our implementation is our own.
-Fire imagery credit for the challenge: CONAE (National Commission of Space Activities of Argentina).
