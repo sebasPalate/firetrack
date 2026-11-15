@@ -1,8 +1,8 @@
 """Firetrack read-only analytics API.
 
-Serves precomputed artifacts only. It never calls FIRMS at request time: the
-Area API covers at most 5 days per request and 5000 transactions per 10 minutes,
-which is incompatible with an interactive query.
+Serves precomputed artifacts only. It never reads FIRMS at request time: the
+pipeline (``python -m pipeline.firms``, then harmonization) builds the artifacts
+once from the Portolan mirror of NASA FIRMS, and this service only queries them.
 
 Run from this directory:
 
