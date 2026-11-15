@@ -20,6 +20,7 @@ import duckdb
 
 from pipeline.firms import sql_literal
 from pipeline.harmonize import (
+    DETECTION_ORDER,
     MIN_DAYS_FRACTION,
     OVERLAP_FIRST,
     PRIMARY,
@@ -409,6 +410,44 @@ def test_the_blind_test_reports_month_order_with_spearman() -> None:
     report = holdout(counts, coverage)
     assert report["spearman_monthly"] > 0.9
     assert report["error_pct"] == 0.0
+
+
+def test_the_hotspot_export_has_a_total_row_order() -> None:
+    """Detections of one overpass share a minute; the export must not depend on read order."""
+    def row(sat: str, lat: float, lon: float) -> str:
+        sensor = "MODIS" if sat in ("Aqua", "Terra") else "VIIRS_SNPP"
+        return (
+            f"(TIMESTAMP '2013-07-05 13:00:00', DATE '2013-07-05', {sql_literal(sensor)}, {sql_literal(sat)}, "
+            f"'D', 'sp', '6.1', 0, 'n', {80 if sensor == 'MODIS' else 'NULL'}, {lat}, {lon}, 10.0, 1.0, 1.0)"
+        )
+    # Written out of order on purpose.
+    rows = [row(PRIMARY, 41.2, -1.0), row("Aqua", 40.5, -2.0), row(PRIMARY, 40.1, -3.0), row("Aqua", 40.5, -4.0)]
+    expected = [("Aqua", 40.5, -4.0), ("Aqua", 40.5, -2.0), (PRIMARY, 40.1, -3.0), (PRIMARY, 41.2, -1.0)]
+    assert "acq_datetime, satellite, latitude, longitude" in DETECTION_ORDER
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        cache = root / "cache" / "orderregion"
+        cache.mkdir(parents=True)
+        con = duckdb.connect()
+        try:
+            con.execute(
+                f"""COPY (SELECT * FROM (VALUES {", ".join(rows)})
+                        AS t(acq_datetime, acq_date, sensor, satellite, daynight, quality, version,
+                             type, confidence, confidence_pct, lat, lon, frp, scan, track))
+                    TO {sql_literal((cache / "2013.parquet").as_posix())} (FORMAT parquet)"""
+            )
+            write_artifacts(
+                con, "orderregion", [{"year": 2013, "month": 7, "harmonized_index": 1.0}],
+                {"prior": None}, {}, {}, data_dir=root,
+            )
+            got = con.execute(
+                f"""SELECT satellite, latitude, longitude
+                    FROM read_parquet({sql_literal((root / "processed" / "hotspots" / "orderregion.parquet").as_posix())})"""
+            ).fetchall()
+        finally:
+            con.close()
+    got = [(sat, float(lat), float(lon)) for sat, lat, lon in got]
+    assert got == expected, got
 
 
 def _run_all() -> None:
