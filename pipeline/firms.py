@@ -26,9 +26,12 @@ One cached row = one detection with every confidence level, so the confidence
 filter (``CONF_SQL``) is applied and measured in the harmonization step instead
 of being baked in here.
 
-    python -m pipeline.firms                     # every region in data/regions.json
-    python -m pipeline.firms iberia chaco        # some regions
-    python -m pipeline.firms iberia --from-year 2016 --to-year 2016
+    python -m pipeline.firms                     # every region in data/regions.json (spain, aragon)
+    python -m pipeline.firms aragon              # one region
+    python -m pipeline.firms spain --from-year 2016 --to-year 2016
+
+The cache holds every detection in the region's bbox. Clipping to the official
+boundary (``pipeline.regions.contains``) happens when the calendar is built.
 
 The layout (remote GeoParquet read with DuckDB, a per-year cache and a measured
 sensor-days table) follows Kiln Watch (Team Off The Binary, NASA Space Apps 2026,
