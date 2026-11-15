@@ -1,7 +1,7 @@
 "use client";
 
 import { formatIndex, formatPercent } from "@/lib/format";
-import type { MethodPayload } from "@/lib/types";
+import type { Holdout, MethodPayload } from "@/lib/types";
 
 /**
  * S10: during the overlap window the calibrated index has to reproduce the
@@ -28,7 +28,7 @@ export function Validation({ method }: { method: MethodPayload }) {
       <p className="mb-3 text-xs leading-relaxed text-slate-400">
         Each pair is one overlap year: the harmonized index (green) against what Aqua MODIS actually detected (grey).
         They are not independent — the index is calibrated on this window — but a wrong factor shows up here as a
-        systematic gap. The real check is the 2012 step below.
+        systematic gap. The real checks are the 2012 step and the blind test below.
       </p>
 
       <div className="space-y-1">
@@ -76,7 +76,74 @@ export function Validation({ method }: { method: MethodPayload }) {
           tone="good"
         />
       </div>
+
+      {method.validation.holdout ? <BlindTest holdout={method.validation.holdout} /> : null}
     </section>
+  );
+}
+
+/**
+ * Out of sample: the factors are refitted on the first VIIRS years only, Aqua is
+ * hidden, and the next four years are rebuilt from Suomi-NPP alone. That is the
+ * position of every month after Aqua, so this error is the one to quote.
+ */
+function BlindTest({ holdout }: { holdout: Holdout }) {
+  const rows = Object.entries(holdout.per_year).map(([year, values]) => ({ year, ...values }));
+  const max = Math.max(...rows.map((row) => Math.max(row.index, row.aqua)), 1);
+  return (
+    <div className="mt-3 border-t border-slate-800 pt-3">
+      <h3 className="text-xs font-semibold text-slate-200">
+        Blind test: {holdout.test[0].slice(0, 4)} to {holdout.test[1].slice(0, 4)} rebuilt without MODIS
+      </h3>
+      <p className="mb-2 mt-1 text-xs leading-relaxed text-slate-400">
+        Factors fitted on {holdout.train[0]} → {holdout.train[1]} only. Aqua is then hidden and{" "}
+        {holdout.months} months are rebuilt from Suomi-NPP alone (green) and compared with what Aqua saw (grey).
+      </p>
+      <div className="space-y-1">
+        {rows.map((row) => (
+          <div key={row.year} className="flex items-center gap-2 text-[10px] tabular-nums">
+            <span className="w-8 text-slate-500">{row.year}</span>
+            <div className="flex h-3 flex-1 items-center">
+              <div
+                className="h-2.5 rounded-sm bg-emerald-400/80"
+                style={{ width: `${(row.index / max) * 100}%` }}
+                title={`rebuilt ${formatIndex(row.index)}`}
+              />
+            </div>
+            <div className="flex h-3 flex-1 items-center">
+              <div
+                className="h-2.5 rounded-sm bg-slate-500/80"
+                style={{ width: `${(row.aqua / max) * 100}%` }}
+                title={`Aqua ${formatIndex(row.aqua)}`}
+              />
+            </div>
+            <span className={`w-14 text-right ${Math.abs(row.error_pct ?? 0) > 25 ? "text-amber-300" : "text-slate-500"}`}>
+              {formatPercent(row.error_pct)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+        <Stat
+          label="Raw VIIRS vs Aqua"
+          value={formatPercent(holdout.raw_error_pct)}
+          note="what adding the new sensor naively does"
+          tone="bad"
+        />
+        <Stat
+          label="Rebuilt vs Aqua, 4 years"
+          value={formatPercent(holdout.error_pct)}
+          note={`median year ${formatPercent(holdout.median_abs_year_error_pct)}`}
+          tone="good"
+        />
+        <Stat
+          label="Month order kept"
+          value={holdout.spearman_monthly === null ? "—" : `ρ ${holdout.spearman_monthly.toFixed(2)}`}
+          note="Spearman, rebuilt months against Aqua months"
+          tone="neutral"
+        />
+      </div>
+    </div>
   );
 }
 

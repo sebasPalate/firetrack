@@ -9,10 +9,22 @@ import { Provenance } from "@/components/Provenance";
 import { Seasonality } from "@/components/Seasonality";
 import { Validation } from "@/components/Validation";
 import { YearlyTotals } from "@/components/YearlyTotals";
-import { ApiError, API_BASE, detectionsCsvUrl, fetchCalendar, fetchMethod, fetchRegions } from "@/lib/api";
+import {
+  ApiError,
+  DATA_SOURCE,
+  STATIC_MODE,
+  detectionsCsvUrl,
+  downloadDetections,
+  fetchCalendar,
+  fetchMethod,
+  fetchRegions,
+} from "@/lib/api";
 import type { CalendarPayload, MethodPayload, Region } from "@/lib/types";
 
 type Selection = { year: number; month: number };
+
+/** The region the page opens on when the list has it. */
+const DEFAULT_REGION = "spain";
 
 function percentile(values: number[], share: number): number {
   if (!values.length) return 0;
@@ -28,7 +40,7 @@ function percentile(values: number[], share: number): number {
  */
 export function Dashboard() {
   const [regions, setRegions] = useState<Region[]>([]);
-  const [regionId, setRegionId] = useState("iberia");
+  const [regionId, setRegionId] = useState(DEFAULT_REGION);
   const [regionsError, setRegionsError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -36,14 +48,18 @@ export function Dashboard() {
     fetchRegions(controller.signal)
       .then((list) => {
         setRegions(list);
-        if (list.length && !list.some((region) => region.id === "iberia")) {
+        if (list.length && !list.some((region) => region.id === DEFAULT_REGION)) {
           setRegionId(list[0].id);
         }
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
         setRegionsError(
-          cause instanceof ApiError ? cause.message : "The API is unreachable. Is FastAPI running?",
+          cause instanceof ApiError
+            ? cause.message
+            : STATIC_MODE
+              ? `Could not read ${DATA_SOURCE}regions.json.`
+              : "The API is unreachable. Is FastAPI running?",
         );
       });
     return () => controller.abort();
@@ -79,10 +95,11 @@ function RegionView({
   const [series, setSeries] = useState<"harmonized" | "raw">("harmonized");
   const [selection, setSelection] = useState<Selection | null>(null);
   const [range, setRange] = useState<{ start: number; end: number } | null>(null);
+  const [download, setDownload] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([fetchCalendar(regionId, controller.signal), fetchMethod(controller.signal)])
+    Promise.all([fetchCalendar(regionId, controller.signal), fetchMethod(regionId, controller.signal)])
       .then(([calendar, calibration]) => {
         setPayload(calendar);
         setMethod(calibration);
@@ -95,7 +112,9 @@ function RegionView({
         setError(
           cause instanceof ApiError
             ? cause.message
-            : `Could not reach ${API_BASE}. Start it with: cd services/api; uvicorn main:app`,
+            : STATIC_MODE
+              ? `Could not read the data in ${DATA_SOURCE}. Build it with: python -m pipeline.export_web`
+              : `Could not reach ${DATA_SOURCE}. Start it with: cd services/api; uvicorn main:app`,
         );
       })
       .finally(() => {
@@ -159,7 +178,7 @@ function RegionView({
                 onChange={(event) => onRegion(event.target.value)}
                 className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-100"
               >
-                {regions.length === 0 ? <option value="iberia">iberia</option> : null}
+                {regions.length === 0 ? <option value={regionId}>{regionId}</option> : null}
                 {regions.map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
                     {candidate.name}
@@ -205,19 +224,46 @@ function RegionView({
                 ))}
               </select>
             </label>
-            <a
-              href={detectionsCsvUrl(regionId, years[0] ?? 2000, years[years.length - 1] ?? 2026)}
-              title="Every detection in the selected range, with its sensor, confidence and FRP. Capped at 200,000 rows, so pick a range you need."
-              className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 font-medium text-emerald-300 hover:bg-emerald-500/20"
-            >
-              Download CSV
-            </a>
+            {STATIC_MODE ? (
+              <button
+                type="button"
+                disabled={download === "busy"}
+                onClick={() => {
+                  setDownload("busy");
+                  downloadDetections(regionId, years[0] ?? 2000, years[years.length - 1] ?? 2026)
+                    .then(({ rows, missing }) =>
+                      setDownload(
+                        `${rows.toLocaleString("en-US")} detections` +
+                          (missing.length ? `, no file for ${missing.join(", ")}` : ""),
+                      ),
+                    )
+                    .catch((cause: unknown) => setDownload(cause instanceof Error ? cause.message : "download failed"));
+                }}
+                title="Every detection in the selected range inside the region boundary, with its sensor, confidence and FRP."
+                className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 font-medium text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+              >
+                {download === "busy" ? "Preparing CSV…" : "Download CSV"}
+              </button>
+            ) : (
+              <a
+                href={detectionsCsvUrl(regionId, years[0] ?? 2000, years[years.length - 1] ?? 2026)}
+                title="Every detection in the selected range, with its sensor, confidence and FRP. Capped at 200,000 rows, so pick a range you need."
+                className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 font-medium text-emerald-300 hover:bg-emerald-500/20"
+              >
+                Download CSV
+              </a>
+            )}
           </div>
         </div>
         {region ? (
           <p className="mt-2 text-[11px] text-slate-500">
-            bbox {region.bbox.map((value) => value.toFixed(1)).join(", ")} · {region.why}
+            {region.geometry ? "clipped to the official boundary" : `bbox ${region.bbox.map((value) => value.toFixed(1)).join(", ")}`}
+            {" · "}
+            {region.why}
           </p>
+        ) : null}
+        {download && download !== "busy" ? (
+          <p className="mt-1 text-right text-[11px] text-slate-500">CSV: {download}</p>
         ) : null}
       </header>
 
