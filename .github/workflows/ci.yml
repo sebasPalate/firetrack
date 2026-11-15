@@ -38,6 +38,7 @@ jobs:
           python -m pipeline.tests.test_regions
           python -m pipeline.tests.test_normalize
           python -m pipeline.tests.test_harmonize
+          python -m pipeline.tests.test_payloads
 
   web:
     name: Web lint and build
