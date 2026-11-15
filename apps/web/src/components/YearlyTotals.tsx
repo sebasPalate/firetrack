@@ -76,13 +76,14 @@ export function YearlyTotals({ payload, years, series, onSeries }: Props) {
       <p className="mt-2 text-xs leading-relaxed text-slate-400">
         {series === "raw" ? (
           <>
-            Every satellite summed, which is what a naive plot shows: the step in <strong>2012</strong> and again from{" "}
-            <strong>2018</strong> is a new camera turning on, not more fire.
+            Every satellite summed. Suomi-NPP joins in <strong className="text-slate-200">2012</strong> and NOAA-21 in{" "}
+            <strong className="text-slate-200">2024</strong>, so the count climbs for two reasons at once: more fire,
+            and one more camera counting the same flames.
           </>
         ) : (
           <>
-            The same record in Aqua MODIS units. The 2012 step is gone and the 2018 tail stays level because spare
-            satellites fill the record instead of inflating it.
+            The same record in Aqua MODIS units. The 2012 camera step is gone, while the latest spike survives: it
+            happened, so it shows.
           </>
         )}{" "}
         {rows.some((row) => row.provisional) ? (

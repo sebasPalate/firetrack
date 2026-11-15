@@ -34,7 +34,7 @@ export function MonthlySeries({ payload, years }: { payload: CalendarPayload; ye
   const peak = points.reduce((best, point) => (point.value > best.value ? point : best), points[0]);
 
   return (
-    <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+    <section className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/40 p-4">
       <header className="mb-2 flex items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-slate-200">Monthly series</h2>
         <span className="text-xs text-slate-400">
@@ -45,7 +45,7 @@ export function MonthlySeries({ payload, years }: { payload: CalendarPayload; ye
       <svg
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="none"
-        className="h-40 w-full"
+        className="min-h-40 w-full flex-1"
         role="img"
         aria-label="Monthly harmonized activity index over the selected range"
       >
