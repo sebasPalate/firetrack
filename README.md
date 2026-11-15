@@ -6,10 +6,9 @@ just telling me that a new satellite turned on?*
 
 NASA Space Apps Challenge 2026 — [*Harmonization of MODIS and VIIRS Hot Spots*](https://www.spaceappschallenge.org/).
 
-**Status:** working end to end. Ingest (Portolan GeoParquet mirror of NASA FIRMS, no key), harmonization
-clipped to the official boundary, artifacts, static export, API and web client all run. Demo regions:
-`spain` (mainland and Balearic Islands) and `aragon`, whose factors borrow Spain's seasonal shape. The
-figures below were measured on the earlier Iberia box and are redrawn by `python -m pipeline.charts`.
+**Status:** working end to end on the demo region. Ingest (Portolan GeoParquet mirror of NASA FIRMS, no
+key), harmonization, artifacts, API and web client all run; only `iberia` is built, the other eight areas
+in `data/regions.json` are configured but have no artifacts yet.
 
 ![Raw yearly hotspot counts (top) against the harmonized index (bottom) for Iberia: the raw series jumps in 2012 and inflates 2024, the index follows the fires](docs/img/salto_2012.svg)
 
@@ -167,8 +166,7 @@ pipeline/              ingest, normalizer, harmonizer, tests
   normalize.py         sensor-agnostic schema, confidence and acquisition time
   harmonize.py         calibration, monthly index, validation, artifact writer
   charts.py            the two figures in docs/img, drawn from the artifacts
-  export_web.py        static JSON and CSV for the web app, from the artifacts
-data/regions.json      demo regions (Spain, Aragón), shared by pipeline and API
+data/regions.json      area of interest list, shared by pipeline and API
 data/aoi/              official boundaries as GeoJSON (IGN via geoBoundaries, CC BY 4.0)
 data/cache/            mirror reads, one Parquet per region and year (gitignored)
 data/sensor_days.parquet  observing days per satellite (gitignored)
@@ -188,12 +186,12 @@ No key and no `.env` are needed. The first run downloads the DuckDB `spatial` an
 the global sensor-days table (three columns per year, once):
 
 ```powershell
-python -m pipeline.firms aragon --dry-run
-python -m pipeline.firms aragon --from-year 2016 --to-year 2016
-python -m pipeline.firms
+python -m pipeline.firms spain --dry-run
+python -m pipeline.firms spain --from-year 2016 --to-year 2016
+python -m pipeline.firms spain
 python -m pipeline.harmonize spain
-python -m pipeline.harmonize aragon --prior-region spain
-python -m pipeline.export_web
+python -m pipeline.firms aragon
+python -m pipeline.harmonize aragon
 ```
 
 The full Iberia ingest takes about 158 s and the harmonization a few seconds; both are resumable per year.
@@ -206,13 +204,11 @@ when Suomi-NPP joins. The harmonizer prints the factor table and the validation 
 | `python -m pipeline.tests.test_regions` | demo regions, boundary files and point-in-polygon (pure) |
 | `python -m pipeline.tests.test_normalize` | confidence and time normalization (pure) |
 | `python -m pipeline.tests.test_harmonize` | shrinkage, source preference, partial months, artifact contract |
-| `python -m pipeline.firms` | ingest both demo regions (`spain`, `aragon`), resumable |
-| `python -m pipeline.harmonize <region>` | build `data/processed/` for one region, clipped to its official boundary |
-| `python -m pipeline.harmonize aragon --prior-region spain` | small region: monthly factors shrink towards Spain's |
-| `python -m pipeline.export_web` | write `apps/web/public/data/` (static JSON and yearly CSV) for every built region |
+| `python -m pipeline.firms` | ingest every region in `data/regions.json`, resumable |
+| `python -m pipeline.harmonize <region>` | build `data/processed/` for one region |
 | `python -m pipeline.charts` | redraw `docs/img/salto_2012.svg` and `factor_por_mes.svg` from the artifacts |
 | `cd services\api; uvicorn main:app --reload` | API on <http://localhost:8000/docs> |
-| `cd apps\web; npm install; npm run dev` | client on <http://localhost:3000>; reads `public/data/` (static), or the API when `NEXT_PUBLIC_API_BASE` is set |
+| `cd apps\web; npm install; npm run dev` | client on <http://localhost:3000>, reads `NEXT_PUBLIC_API_BASE` |
 | `cd apps\web; npm run build` | production build; the page is static, the data is fetched in the browser |
 
 ## 7. API
@@ -223,11 +219,7 @@ when Suomi-NPP joins. The harmonizer prints the factor table and the validation 
 | `GET /regions` | configured areas of interest |
 | `GET /calendar?region=&start=&end=` | month × year matrix, raw counts, median per month, anomaly %, plus `partial` / `provisional` / `source` / `factor` / `observed_days` |
 | `GET /detections?region=&start=&end=&limit=` | CSV of the detections behind the view (`Content-Disposition: attachment`) |
-| `GET /method?region=` | calibration table, validation statistics (overlap and blind test), boundary clip, limitations |
-
-The same payloads also exist as static files: `python -m pipeline.export_web` writes
-`apps/web/public/data/{regions.json, calendar/<region>.json, method/<region>.json, detections/<region>/<year>.csv}`
-with the code the API uses (`pipeline/payloads.py`), so the deployed site needs no server at all.
+| `GET /method` | calibration table, validation statistics, limitations |
 
 Missing artifacts return `503` with an actionable message. An empty chart that looks like "no fires" is
 worse than an honest error. `partial` months and `provisional` years are served but kept out of the
