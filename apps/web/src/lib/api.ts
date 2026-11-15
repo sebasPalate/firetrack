@@ -76,6 +76,17 @@ export function detectionsCsvUrl(region: string, startYear: number, endYear: num
   return `${API_BASE}/detections?region=${encodeURIComponent(region)}&start=${start}&end=${end}`;
 }
 
+/** One year of detections as CSV, from the static files or from the API. */
+export function detectionsYearUrl(region: string, year: number): string {
+  if (!STATIC_MODE) return detectionsCsvUrl(region, year, year);
+  return `${STATIC_BASE}/detections/${encodeURIComponent(region)}/${year}.csv`;
+}
+
+/** Official boundary of a region. Always a static file, in both modes. */
+export function boundaryUrl(region: string): string {
+  return `${STATIC_BASE}/aoi/${encodeURIComponent(region)}.geojson`;
+}
+
 /**
  * Static mode: the detections are one CSV per year, so the range is stitched in
  * the browser (one header, then every year in order) and saved as one file.
