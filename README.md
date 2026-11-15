@@ -6,10 +6,11 @@ just telling me that a new satellite turned on?*
 
 NASA Space Apps Challenge 2026 — [*Harmonization of MODIS and VIIRS Hot Spots*](https://www.spaceappschallenge.org/).
 
-**Status:** pre-release. Ingest (Portolan GeoParquet mirror of NASA FIRMS, no key) and API plumbing are
-implemented and tested; harmonized artifacts and the web client are in progress.
+**Status:** working end to end on the demo region. Ingest (Portolan GeoParquet mirror of NASA FIRMS, no
+key), harmonization, artifacts, API and web client all run; only `iberia` is built, the other eight areas
+in `data/regions.json` are configured but have no artifacts yet.
 
-![Raw hotspot counts jump when new satellites arrive; the harmonized record stays level](docs/img/salto_2012.svg)
+![Raw yearly hotspot counts (top) against the harmonized index (bottom) for Iberia: the raw series jumps in 2012 and inflates 2024, the index follows the fires](docs/img/salto_2012.svg)
 
 ---
 
@@ -34,14 +35,15 @@ VIIRS sees and MODIS misses entirely.
 
 ![The same fire, split differently by pixel size](docs/img/pixeles_modis_viirs.svg)
 
-Plot the raw counts and the series jumps in 2012, again in 2018 and again in 2024, each time a VIIRS
-satellite joins. Nothing changed on the ground. Only the camera did.
+Plot the raw counts and the series jumps the moment Suomi-NPP joins in 2012, and inflates again in 2024
+once NOAA-21 is flying alongside NOAA-20 — while the fires themselves moved far less. Nothing changed on the
+ground. Only the cameras did.
 
 A single correction factor does not fix this, because the ratio is **seasonal**: during the dry season
 both sensors see the large fires and VIIRS merely splits them into more pixels, but during agricultural
 burning season VIIRS sees thousands of small fires that MODIS never detects.
 
-![Per-month correction factors: one factor for the whole year is wrong almost every month](docs/img/factor_por_mes.svg)
+![Monthly correction factors measured on Iberia: 4.8 in February, 8.7 in May, pooled 5.87](docs/img/factor_por_mes.svg)
 
 ## 2. The method
 
@@ -55,8 +57,15 @@ Think of it as an exchange rate between two currencies:
 every VIIRS satellite. Calibrating against Aqua holds the diurnal cycle constant. Calibrating against
 Terra (~10:30) would mix a change of sensor with a change of observation time.
 
-Day and night are calibrated **separately**, and sparse cells are shrunk with an empirical-Bayes prior
-instead of producing a rate from three observations.
+**One factor per calendar month, day and night together.** Splitting them looks more honest and measures
+worse: on Iberia the half-day factors differ three- to seven-fold while the day/night share drifts year to
+year, and correcting each half separately overshot by 45–280 %. One factor per month lands at 3.5 % median
+error. Sparse months are shrunk towards the pooled factor with an empirical-Bayes prior instead of claiming a
+rate from three observations.
+
+**One VIIRS at a time.** Suomi-NPP carries the series while it flies; NOAA-20 only fills the tail after
+S-NPP stopped on 2026-11-02, with its own measured factor. Summing satellites is what creates the 2018 and
+2024 steps in the first place. Terra bridges 2000-11 → 2002-06 through its own overlap factor.
 
 **What the output is:** a **harmonized activity index**, not a count of fires. The UI always says so.
 The native per-sensor counts stay available in the CSV export.
@@ -110,17 +119,20 @@ NASA FIRMS ──► Portolan GeoParquet mirror (CC0, one file per year)
         │       read in place with DuckDB, only the region's row groups
         │  (pipeline only, never at request time)
         ▼
-   pipeline/          firms (ingest) → harmonize
+   pipeline/          firms (ingest) → normalize → harmonize (calibration, artifacts)
         │
         ▼
-   data/processed/    Parquet artifacts (gitignored, rebuilt by the pipeline)
+   data/processed/    Parquet artifacts, committed so a deploy needs no 158 s ingest
         │
         ▼
    services/api/      FastAPI + DuckDB, read-only
         │
         ▼
-   apps/web/          Next.js + Tailwind + Plotly + MapLibre
+   apps/web/          Next.js + Tailwind; charts are hand-rolled SVG and CSS grid
 ```
+
+The client ships no charting or map library: the calendar is a CSS grid, the series are inline SVG. One map
+layer of hotspots is listed as a "should have" in the problem document and is not built.
 
 Three deliberate boundaries:
 
@@ -131,16 +143,20 @@ Three deliberate boundaries:
 ## 5. Repository layout
 
 ```
-apps/web/              Next.js client (created with create-next-app)
+apps/web/              Next.js client: calendar, panels, CSV download
+  src/lib/             artifact types, API client, colour ramps and formatting
+  src/components/      Dashboard shell and one component per panel
 services/api/          FastAPI service and the artifact contract
-pipeline/              ingest, normalizer, tests
+pipeline/              ingest, normalizer, harmonizer, tests
   firms.py             ingest: Portolan mirror, per region and year cache, sensor days
   regions.py           loads and validates data/regions.json, antimeridian split
   normalize.py         sensor-agnostic schema, confidence and acquisition time
+  harmonize.py         calibration, monthly index, validation, artifact writer
+  charts.py            the two figures in docs/img, drawn from the artifacts
 data/regions.json      area of interest list, shared by pipeline and API
 data/cache/            mirror reads, one Parquet per region and year (gitignored)
 data/sensor_days.parquet  observing days per satellite (gitignored)
-data/processed/        Parquet artifacts (gitignored)
+data/processed/        Parquet artifacts and method.json (committed, ~12 MB)
 docs/                  problem definition in Spanish and English, diagrams
 ```
 
@@ -159,18 +175,24 @@ the global sensor-days table (three columns per year, once):
 python -m pipeline.firms iberia --dry-run
 python -m pipeline.firms iberia --from-year 2016 --to-year 2016
 python -m pipeline.firms iberia
+python -m pipeline.harmonize iberia
 ```
 
-The summary printed at the end already shows the problem: the detection count per year jumps in 2012, when
-Suomi-NPP joins.
+The full Iberia ingest takes about 158 s and the harmonization a few seconds; both are resumable per year.
+The summary printed by the ingest already shows the problem: the detection count per year jumps in 2012,
+when Suomi-NPP joins. The harmonizer prints the factor table and the validation instead.
 
 | Command | Purpose |
 |---|---|
 | `python -m pipeline.tests.test_firms` | bounding box, query and cache freshness (pure) |
 | `python -m pipeline.tests.test_normalize` | confidence and time normalization (pure) |
+| `python -m pipeline.tests.test_harmonize` | shrinkage, source preference, partial months, artifact contract |
 | `python -m pipeline.firms` | ingest every region in `data/regions.json`, resumable |
+| `python -m pipeline.harmonize <region>` | build `data/processed/` for one region |
+| `python -m pipeline.charts` | redraw `docs/img/salto_2012.svg` and `factor_por_mes.svg` from the artifacts |
 | `cd services\api; uvicorn main:app --reload` | API on <http://localhost:8000/docs> |
-| `cd apps; npx create-next-app@latest web --ts --tailwind --eslint --app --src-dir --import-alias "@/*"` | create the client once |
+| `cd apps\web; npm install; npm run dev` | client on <http://localhost:3000>, reads `NEXT_PUBLIC_API_BASE` |
+| `cd apps\web; npm run build` | production build; the page is static, the data is fetched in the browser |
 
 ## 7. API
 
@@ -178,22 +200,25 @@ Suomi-NPP joins.
 |---|---|
 | `GET /health` | artifact availability per region |
 | `GET /regions` | configured areas of interest |
-| `GET /calendar?region=&start=&end=` | month × year matrix, raw counts, per-month median, anomaly % |
-| `GET /detections?region=&start=&end=&limit=` | CSV of the detections behind the view |
+| `GET /calendar?region=&start=&end=` | month × year matrix, raw counts, median per month, anomaly %, plus `partial` / `provisional` / `source` / `factor` / `observed_days` |
+| `GET /detections?region=&start=&end=&limit=` | CSV of the detections behind the view (`Content-Disposition: attachment`) |
 | `GET /method` | calibration table, validation statistics, limitations |
 
 Missing artifacts return `503` with an actionable message. An empty chart that looks like "no fires" is
-worse than an honest error.
+worse than an honest error. `partial` months and `provisional` years are served but kept out of the
+per-month median, so the running month can never set the baseline it is compared against.
 
 ## 8. Quality gates
 
 - **Unit tests** pin the silent failure modes: the area filter and the cache rule (a wrong box or a stale
-  year means missing detections) and confidence handling (MODIS `0–100` versus VIIRS `l/n/h`).
+  year means missing detections), confidence handling (MODIS `0–100` versus VIIRS `l/n/h`), and the
+  harmonizer's shrinkage, source preference, partial-month rule and artifact contract.
 - **Source check:** the mirror must match the official NASA FIRMS files on a test area (done for 2016 and
   2022, see §3).
-- **Step test:** raw counts must jump across 2012/2018/2024 while the harmonized index stays flat. If it
-  jumps, the calibration is wrong.
-- **Denial test:** rebuild the record from VIIRS alone and check it against what Aqua actually observed.
+- **Measured result (Iberia, calibrated 2012-02 → 2025):** median \|error\| against Aqua in the overlap
+  **3.5 %**, worst 12.6 %. The 2011 → 2013 step is **+202.6 % raw**, **−25.9 % on the index** and **−24.6 %
+  on Aqua itself**: the index tracks the ground, the raw count tracks the camera.
+- **Correction test:** rebuild the record from VIIRS alone and check it against what Aqua actually observed.
 - **Published limitations:** regions where the method under- or over-corrects are listed, not hidden.
 
 ## 9. Documentation

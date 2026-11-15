@@ -49,7 +49,7 @@ pequeña de la derecha ni siquiera aparece en MODIS.
 **Consecuencia:** si pintamos la serie histórica tal cual, en 2012 el número de focos se dispara. Parece
 que de repente hay muchísimo más fuego, pero lo único que ha cambiado es la cámara.
 
-![Gráfico: focos contados sin ajustar frente al índice armonizado entre 2001 y 2026. La serie sin ajustar salta en 2012, 2018 y 2023 al entrar cada satélite VIIRS; el índice armonizado se mantiene estable.](img/salto_2012.svg)
+![Gráfico: focos contados sin ajustar (arriba) frente al índice armonizado (abajo), totales anuales de Iberia desde 2001. La serie sin ajustar salta cuando entra Suomi-NPP en 2012 y se infla en 2024 con NOAA-21 ya en órbita; el índice se mueve con los incendios, no con la cámara.](img/salto_2012.svg)
 
 > Es como cambiar el radar de tráfico por uno más sensible y concluir que la gente conduce peor.
 
@@ -160,8 +160,15 @@ VIIRS, con la misma hora de paso que ellos (~13:30). Calibrar contra Aqua mantie
 diurno. Calibrar contra Terra (10:30) o contra un promedio de MODIS mezcla cambio de sensor con cambio de
 hora de observación. Terra actúa solo como puente 2000–2002.
 
-Detalle de implementación: razón de totales por mes calendario, **día y noche separados**, con suavizado
-tipo empirical Bayes para celdas con pocas muestras.
+Detalle de implementación: razón de totales por mes calendario, **un solo factor por mes, día y noche
+juntos**, con suavizado tipo empirical Bayes para celdas con pocas muestras. Separar día y noche parecía más
+honesto y mide peor: en Iberia los factores de cada mitad difieren entre 3 y 7 veces y la proporción de
+detecciones diurnas se mueve año a año, así que corregir cada mitad por separado sobrecorrige entre 45 % y
+280 %. Con un factor por mes el error mediano contra Aqua queda en 3,5 %.
+
+Un solo VIIRS a la vez: Suomi-NPP lleva la serie mientras vuela y NOAA-20 solo rellena la cola desde que
+S-NPP terminó (2026-11-02), con su propio factor medido. Sumar satélites es exactamente el salto que este
+proyecto existe para eliminar.
 
 ### 7.2 Estrategias consideradas
 
@@ -354,21 +361,26 @@ El reto se gana o se pierde en **credibilidad del método y comunicación**, no 
 | ID | Decisión | Motivo |
 |---|---|---|
 | **D1** | Monorepo `apps/web` + `services/api` + `pipeline/` + `data/` | El pipeline no es el backend |
-| **D2** | Regiones predefinidas con registro completo; AOI arbitraria en modo limitado | Un demo sin esperas: las regiones del demo se procesan antes |
+| **D2** | Regiones predefinidas con registro completo; AOI arbitraria en modo limitado | Un demo sin esperas: las regiones del demo se procesan antes. La ingesta completa de Iberia (27 años-región, 1,15 M detecciones) tarda **158 s** medidos, así que entran varias regiones en el bloque B4; el costo real es calibrar cada región, no descargarla |
 | **D3** | `MODIS` + `VIIRS_SNPP` + `VIIRS_NOAA20` + `VIIRS_NOAA21`, filas `sp` y `nrt` | S-NPP termina el 2026-11-02 |
-| **D4** | Commitear solo agregados, nunca detecciones crudas | Tamaño de repo vs reproducibilidad |
+| **D4** | Se commitean los artefactos procesados (`data/processed/`, ~12 MB) y nunca el caché crudo | Un deploy sirve la app sin correr una ingesta de 158 s. El caché crudo (`data/cache/`, cientos de MB) sigue fuera del repo y se regenera |
 | **D5** | Next.js en Vercel; FastAPI en Railway/Render/Fly | Dos despliegues simples y gratuitos |
-| **D6** | **Región del demo:** Chaco vs Iberia/Aragón — `[ABIERTA]` | Chaco = relato CONAE; Iberia = cercanía del equipo |
+| **D6** | **Región del demo: Iberia/Aragón** — bbox `[-10, 35.5, 4, 44]` | Registro completo 2000-11 → hoy, incendios de verano con estacionalidad clara y cercanía del equipo para explicarlo |
 | **D7** | Única ingesta: mirror Portolan en `pipeline/firms.py`. Sin `MAP_KEY` ni API de FIRMS | Sin clave ni límite de 5 días, mismo diseño que Kiln Watch y verificado contra los archivos de NASA |
 
 ## 16. Stack
 
 ```
-apps/web/          Next.js + TypeScript + Tailwind + Plotly + MapLibre
+apps/web/          Next.js + TypeScript + Tailwind (calendario en CSS grid, series en SVG propio)
 services/api/      FastAPI + DuckDB
-pipeline/          Python: ingesta → normalización → grilla → armonización
-data/              regions.json + artefactos (crudos y Parquet ignorados por git)
+pipeline/          Python: ingesta → normalización → armonización
+data/              regions.json + artefactos procesados commiteados (caché crudo ignorado)
 ```
+
+**Sin Plotly ni MapLibre.** El calendario es un grid de CSS, las series son SVG inline y la rampa de
+color está implementada a mano (viridis y coolwarm, ambas seguras para daltonismo). Dos librerías menos que
+desplegar, cero problemas de tamaño de bundle en el escenario, y el control total de la accesibilidad. La
+capa de mapa con los focos es "Deseable" en el alcance y **no se entrega**; el CSV cubre esa necesidad.
 
 **FastAPI y no Django:** servicio de lectura analítica con 5 endpoints. Sin auth, sin admin, sin
 migraciones, sin ORM. DuckDB sobre Parquet es una consulta SQL; FastAPI da `/docs` automático.

@@ -45,10 +45,10 @@ burns that MODIS never sees.
 The fire is exactly the same in both cases, yet VIIRS counts more than twice as many hotspots. And the
 small burn on the right does not appear in MODIS at all.
 
-**Consequence:** plot the historical series as-is and the count explodes in 2012. It looks like there is
-suddenly far more fire, when the only thing that changed is the camera.
+**Consequence:** plot the historical series as-is and the count explodes in 2012 and again in 2024. It looks
+like there is suddenly far more fire, when the only thing that changed is how many cameras are counting.
 
-![Chart: raw hotspot counts versus the harmonized index, 2001–2026. The raw series jumps in 2012, 2018 and 2023 as each VIIRS satellite joins; the harmonized index stays level.](img/salto_2012.svg)
+![Chart: raw hotspot counts (top) versus the harmonized index (bottom), yearly totals for Iberia from 2001. The raw series jumps when Suomi-NPP joins in 2012 and inflates in 2024 with NOAA-21 already flying; the index follows the fires, not the camera.](img/salto_2012.svg)
 
 > It is like swapping the traffic radar for a more sensitive one and concluding that people drive worse.
 
@@ -158,8 +158,15 @@ same overpass time (~13:30). Calibrating against Aqua holds the diurnal cycle co
 Terra (10:30) or against a MODIS average mixes a change of sensor with a change of observation time. Terra
 only acts as a bridge for 2000–2002.
 
-Implementation detail: ratio of totals per calendar month, **day and night separately**, with empirical-Bayes
-shrinkage for cells with few samples.
+Implementation detail: ratio of totals per calendar month, **one factor per month, day and night
+together**, with empirical-Bayes shrinkage for cells with few samples. Splitting day from night looks more
+honest and measures worse: on Iberia the half-day factors differ three- to seven-fold while the day/night
+share drifts year to year, so correcting each half separately over-corrected by 45–280 %. With one factor
+per month the median error against Aqua is 3.5 %.
+
+One VIIRS at a time: Suomi-NPP carries the series while it flies, and NOAA-20 only fills the tail after
+S-NPP stopped (2026-11-02), with its own measured factor. Summing satellites is exactly the step this
+project exists to remove.
 
 ### 7.2 Strategies considered
 
@@ -352,21 +359,26 @@ This challenge is won or lost on **method credibility and communication**, not o
 | ID | Decision | Reason |
 |---|---|---|
 | **D1** | Monorepo `apps/web` + `services/api` + `pipeline/` + `data/` | The pipeline is not the backend |
-| **D2** | Predefined regions with the full record; arbitrary AOI in limited mode | A demo without waiting: demo regions are processed beforehand |
+| **D2** | Predefined regions with the full record; arbitrary AOI in limited mode | A demo without waiting: demo regions are processed beforehand. The full Iberia ingest (27 region-years, 1.15 M detections) takes a measured **158 s**, so several regions fit inside block B4; the real cost is calibrating a region, not downloading it |
 | **D3** | `MODIS` + `VIIRS_SNPP` + `VIIRS_NOAA20` + `VIIRS_NOAA21`, `sp` and `nrt` rows | S-NPP ends on 2026-11-02 |
-| **D4** | Commit aggregates only, never raw detections | Repository size vs reproducibility |
+| **D4** | Commit the processed artifacts (`data/processed/`, ~12 MB), never the raw cache | A deploy serves the app without running a 158 s ingest. The raw cache (`data/cache/`, hundreds of MB) stays out of the repo and is rebuilt |
 | **D5** | Next.js on Vercel; FastAPI on Railway/Render/Fly | Two simple, free deployments |
-| **D6** | **Demo region:** Chaco vs Iberia/Aragón — `[OPEN]` | Chaco = CONAE story; Iberia = team proximity |
+| **D6** | **Demo region: Iberia/Aragón** — bbox `[-10, 35.5, 4, 44]` | Full record 2000-11 → today, summer fires with a clear seasonal shape, and proximity to the team to explain it |
 | **D7** | Single ingest: the Portolan mirror in `pipeline/firms.py`. No `MAP_KEY`, no FIRMS API | No key and no 5-day cap, the same design as Kiln Watch, checked against the NASA files |
 
 ## 16. Stack
 
 ```
-apps/web/          Next.js + TypeScript + Tailwind + Plotly + MapLibre
+apps/web/          Next.js + TypeScript + Tailwind (calendar in CSS grid, series in hand-rolled SVG)
 services/api/      FastAPI + DuckDB
-pipeline/          Python: ingest → normalize → grid → harmonize
-data/              regions.json + artifacts (raw and Parquet gitignored)
+pipeline/          Python: ingest → normalize → harmonize
+data/              regions.json + committed processed artifacts (raw cache gitignored)
 ```
+
+**No Plotly, no MapLibre.** The calendar is a CSS grid, the series are inline SVG, and the colour ramps are
+implemented by hand (viridis and coolwarm, both colourblind-safe). Two fewer libraries to deploy, no bundle
+risk in the demo, full control over accessibility. The hotspot map layer is a "should have" in the scope and
+**is not shipped**; the CSV covers that need.
 
 **FastAPI and not Django:** a read-only analytics service with 5 endpoints. No auth, no admin, no
 migrations, no ORM. DuckDB over Parquet is a SQL query; FastAPI gives free `/docs`.
