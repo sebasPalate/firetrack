@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /apps/web
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: pip
+    directory: /pipeline
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: pip
+    directory: /services/api
+    schedule:
+      interval: monthly

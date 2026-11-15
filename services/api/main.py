@@ -1,8 +1,8 @@
 """Firetrack read-only analytics API.
 
-Serves precomputed artifacts only. It never calls FIRMS at request time: the
-Area API covers at most 5 days per request and 5000 transactions per 10 minutes,
-which is incompatible with an interactive query.
+Serves precomputed artifacts only. It never reads FIRMS at request time: the
+pipeline (``python -m pipeline.firms``, then harmonization) builds the artifacts
+once from the Portolan mirror of NASA FIRMS, and this service only queries them.
 
 Run from this directory:
 
@@ -12,22 +12,29 @@ Artifacts consumed (produced by the pipeline, never written here):
 
     data/processed/calendar/{region}.parquet   one row per year+month
     data/processed/hotspots/{region}.parquet   unified detections
-    data/processed/method.json                 calibration table + limitations
+    data/processed/method/{region}.json        calibration table, validation, limitations
+
+The payloads are built by ``pipeline.payloads``, which ``pipeline.export_web`` also
+uses to write the static copy for the web client, so both always agree.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import date
 from pathlib import Path
 
 import duckdb
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import Response
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))  # uvicorn runs from services/api; the payload code lives in pipeline/
+
+from pipeline.payloads import calendar_payload, csv_cell, public_region  # noqa: E402
 DATA_DIR = Path(os.environ.get("FIRETRACK_DATA_DIR", REPO_ROOT / "data"))
 PROCESSED = DATA_DIR / "processed"
 REGIONS_PATH = DATA_DIR / "regions.json"
@@ -43,6 +50,8 @@ app.add_middleware(
     allow_origins=[origin for origin in os.environ.get("ALLOWED_ORIGINS", "*").split(",")],
     allow_methods=["GET"],
     allow_headers=["*"],
+    # Without this the browser hides the row count and truncation flag of the CSV.
+    expose_headers=["Content-Disposition", "X-Firetrack-Rows", "X-Firetrack-Truncated"],
 )
 
 
@@ -89,17 +98,18 @@ def query_rows(path: Path, sql_suffix: str = "", params: list | None = None) -> 
 @app.get("/health")
 def health() -> dict:
     calendars = sorted(p.stem for p in (PROCESSED / "calendar").glob("*.parquet"))
+    methods = sorted(p.stem for p in (PROCESSED / "method").glob("*.json"))
     return {
         "status": "ok" if calendars else "no-artifacts",
         "regions_configured": len(load_regions()) if REGIONS_PATH.exists() else 0,
         "regions_ready": calendars,
-        "has_method": (PROCESSED / "method.json").exists(),
+        "methods_ready": methods,
     }
 
 
 @app.get("/regions")
 def regions() -> list[dict]:
-    return list(load_regions().values())
+    return [public_region(region) for region in load_regions().values()]
 
 
 @app.get("/calendar")
@@ -121,57 +131,26 @@ def calendar(
         params.append(end.year * 100 + end.month)
     where = f"where {' and '.join(clauses)}" if clauses else ""
 
-    rows = sorted(
-        query_rows(path, where, params),
-        key=lambda row: (row["year"], row["month"]),
-    )
+    rows = query_rows(path, where, params)
     if not rows:
         raise HTTPException(404, "no data in the requested range")
-
-    years = sorted({row["year"] for row in rows})
-    by_month: dict[int, list[float]] = {}
-    for row in rows:
-        by_month.setdefault(row["month"], []).append(row["harmonized_index"])
-
-    median_by_month = {
-        month: _median(values) for month, values in sorted(by_month.items())
-    }
-
-    def matrix(key: str) -> list[list[float | None]]:
-        index = {(row["year"], row["month"]): row.get(key) for row in rows}
-        return [[index.get((year, month)) for year in years] for month in range(1, 13)]
-
-    harmonized = matrix("harmonized_index")
-    anomaly = [
-        [
-            None
-            if value is None or not median_by_month.get(month)
-            else round((value - median_by_month[month]) / median_by_month[month] * 100, 1)
-            for year, value in zip(years, harmonized[month - 1])
-        ]
-        for month in range(1, 13)
-    ]
-
-    return {
-        "region": config,
-        "years": years,
-        "months": list(range(1, 13)),
-        "harmonized": harmonized,
-        "raw_count": matrix("raw_count"),
-        "median_by_month": median_by_month,
-        "anomaly_pct": anomaly,
-        "units": "harmonized activity index (not an absolute fire count)",
-    }
+    return calendar_payload(config, rows)
 
 
-@app.get("/detections", response_class=PlainTextResponse)
+@app.get("/detections")
 def detections(
     region: str = Query(...),
     start: date | None = None,
     end: date | None = None,
-    limit: int = Query(50_000, ge=1, le=500_000),
-) -> str:
-    """Stream the detections behind the current view as CSV."""
+    limit: int = Query(200_000, ge=1, le=500_000),
+) -> Response:
+    """Stream the detections behind the current view as CSV.
+
+    The default cap covers the busiest single year in Iberia (141k rows in 2025),
+    so a year export is never truncated by accident. When the cap does cut a
+    range, the response says so in ``X-Firetrack-Truncated`` instead of returning
+    a smaller file that looks complete.
+    """
     region_or_404(region)
     path = artifact(PROCESSED / "hotspots" / f"{region}.parquet")
 
@@ -184,33 +163,35 @@ def detections(
         params.append(end.isoformat())
     where = f"where {' and '.join(clauses)}" if clauses else ""
 
-    rows = query_rows(path, f"{where} limit {limit}", params)
+    rows = query_rows(path, f"{where} limit {limit + 1}", params)
     if not rows:
         raise HTTPException(404, "no detections in the requested range")
+    truncated = len(rows) > limit
+    rows = rows[:limit]
 
     header = ",".join(rows[0].keys())
-    body = "\n".join(",".join(_cell(value) for value in row.values()) for row in rows)
-    return f"{header}\n{body}\n"
+    body = "\n".join(",".join(csv_cell(value) for value in row.values()) for row in rows)
+    # The filename is served, not guessed by the browser: the client is on
+    # another origin, where the `download` attribute is ignored. It names the
+    # range the user asked for, not the rows that happened to survive `limit`.
+    first = start.isoformat() if start else rows[0]["acq_date"] or "start"
+    last = end.isoformat() if end else rows[-1]["acq_date"] or "end"
+    filename = f"firetrack-{region}-{first}-{last}.csv"
+    return Response(
+        f"{header}\n{body}\n",
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Firetrack-Rows": str(len(rows)),
+            "X-Firetrack-Truncated": "true" if truncated else "false",
+        },
+    )
 
 
 @app.get("/method")
-def method() -> dict:
-    path = PROCESSED / "method.json"
+def method(region: str = Query(..., description="region id from data/regions.json")) -> dict:
+    region_or_404(region)
+    path = PROCESSED / "method" / f"{region}.json"
     if not path.exists():
-        raise HTTPException(503, "method.json is not generated yet")
+        raise HTTPException(503, f"method/{region}.json is not generated yet: run  python -m pipeline.harmonize {region}")
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _median(values: list[float]) -> float:
-    ordered = sorted(values)
-    middle = len(ordered) // 2
-    if len(ordered) % 2:
-        return round(ordered[middle], 4)
-    return round((ordered[middle - 1] + ordered[middle]) / 2, 4)
-
-
-def _cell(value: object) -> str:
-    if value is None:
-        return ""
-    text = str(value)
-    return f'"{text}"' if "," in text else text
