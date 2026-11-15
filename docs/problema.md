@@ -186,7 +186,7 @@ incendios". Los conteos nativos quedan en el CSV con columna `sensor`.
 ### 7.3 Para qué sirve
 
 Con la serie en la misma escala, por fin se puede responder: *"¿este agosto ha tenido más fuego de lo
-normal en el Chaco?"*. Comparamos el valor de este agosto con la mediana de todos los agostos desde el
+normal en Aragón?"*. Comparamos el valor de este agosto con la mediana de todos los agostos desde el
 2000. Si está 40 % por encima, es una anomalía real y no un efecto del cambio de satélite. Eso es lo que
 necesitan bomberos, emergencias, científicos y gestores del territorio.
 
@@ -261,7 +261,7 @@ Requiere Earthdata Login o código por email, permite **un año global por pedid
 
 ### 9.5 Consecuencia de alcance
 
-- **Primario:** regiones predefinidas con calendario completo 2000 → presente.
+- **Primario:** dos regiones predefinidas (España y Aragón, §9.7) con calendario completo 2000 → presente.
 - **Secundario:** AOI arbitraria en modo "cobertura limitada" (ventana corta, declarada en la UI).
 - **Descartado:** grilla global 0.25° completa. Un grid mensual global son ~1,04 M celdas × 300 meses: es
   un backend, no algo que se pueda enviar al navegador.
@@ -274,9 +274,25 @@ Esquema unificado: `sensor`, `platform`, `pixel_km`, `confidence_score` (0–1 n
 
 ### 9.7 Acotado geográfico
 
-`data/regions.json` define las AOIs. Candidatas: **Chaco** (crédito de foto de CONAE, relato local
-argentino), **Iberia/Aragón** (cercanía del equipo y audiencia europea), Amazonía, Cerrado, California,
-Australia SE, Siberia, Sahel y Borneo.
+Decisión D6 (2026-11-15): la demo usa **dos regiones**, cada una con un papel.
+
+| Región | Papel | Escala Aqua MODIS |
+|---|---|---|
+| **España** (península y Baleares) | protagonista: demuestra el método. El factor VIIRS/Aqua cambia de verdad según el mes (de día, de 3,4 a 5,6) y la prueba de apagar MODIS da +6,1 % | entre 1.000 y 4.000 focos de vegetación al año |
+| **Aragón** | historia local para el evento de Zaragoza | solo entre 40 y 60 al año: no da para factores propios por mes, así que su calibración se apoyará en la de España |
+
+`data/regions.json` guarda para cada región un rectángulo, que es lo que lee la ingesta porque es lo que el
+mirror sabe filtrar, y la ruta a su contorno oficial en `data/aoi/` (Instituto Geográfico Nacional vía
+geoBoundaries, CC BY 4.0, simplificado a unos 300 m). Al construir el calendario los focos se recortan con
+ese contorno, para no contar fuegos de Portugal, Andorra o Francia.
+
+**Fuera de la demo:** Canarias (otro régimen de fuego, a 1.000 km, y en 2021 el volcán de La Palma añade unos
+31.000 focos que FIRMS marca como vegetación), Ceuta y Melilla. Las 9 regiones candidatas del mundo (Chaco,
+Amazonía, Cerrado, California, Australia SE, Siberia, Sahel, Borneo e Iberia) se quitan de `regions.json`.
+
+**Comprobación del contorno:** de los 442.559 focos que NASA FIRMS asigna a España (sin Canarias) entre 2000 y
+2025, el 99,4 % cae dentro del contorno del IGN; lo que queda fuera está sobre todo en la raya con Portugal.
+El contorno de Aragón da los mismos focos que el de OpenStreetMap salvo 2 de 18.026.
 
 ## 10. Alcance
 
@@ -292,7 +308,7 @@ píxel.
 
 ## 11. Guion del demo (5 minutos)
 
-1. Elegir la región del demo con el registro completo.
+1. Abrir España con el registro completo y después Aragón.
 2. El calendario se llena: banda de estación seca visible, 2024 vs 2005 **sin** el salto artificial.
 3. Pasar el mouse por un mes: valor, mediana, anomalía.
 4. Cambiar a estacionalidad y totales anuales.
@@ -365,7 +381,11 @@ El reto se gana o se pierde en **credibilidad del método y comunicación**, no 
 | **D3** | `MODIS` + `VIIRS_SNPP` + `VIIRS_NOAA20` + `VIIRS_NOAA21`, filas `sp` y `nrt` | S-NPP termina el 2026-11-02 |
 | **D4** | Se commitean los artefactos procesados (`data/processed/`, ~12 MB) y nunca el caché crudo | Un deploy sirve la app sin correr una ingesta de 158 s. El caché crudo (`data/cache/`, cientos de MB) sigue fuera del repo y se regenera |
 | **D5** | Next.js en Vercel; FastAPI en Railway/Render/Fly | Dos despliegues simples y gratuitos |
+<<<<<<< HEAD
 | **D6** | **Región del demo: Iberia/Aragón** — bbox `[-10, 35.5, 4, 44]` | Registro completo 2000-11 → hoy, incendios de verano con estacionalidad clara y cercanía del equipo para explicarlo |
+=======
+| **D6** | **Regiones del demo:** España (península y Baleares) y Aragón. Sin Canarias. Recorte con el contorno oficial del IGN | España da señal suficiente y factores por mes visibles; Aragón es la historia local del evento de Zaragoza (§9.7) |
+>>>>>>> da47292d2e5b5525ef18e4327b2e2d8a19e37e6c
 | **D7** | Única ingesta: mirror Portolan en `pipeline/firms.py`. Sin `MAP_KEY` ni API de FIRMS | Sin clave ni límite de 5 días, mismo diseño que Kiln Watch y verificado contra los archivos de NASA |
 
 ## 16. Stack
@@ -373,8 +393,13 @@ El reto se gana o se pierde en **credibilidad del método y comunicación**, no 
 ```
 apps/web/          Next.js + TypeScript + Tailwind (calendario en CSS grid, series en SVG propio)
 services/api/      FastAPI + DuckDB
+<<<<<<< HEAD
 pipeline/          Python: ingesta → normalización → armonización
 data/              regions.json + artefactos procesados commiteados (caché crudo ignorado)
+=======
+pipeline/          Python: ingesta → normalización → grilla → armonización
+data/              regions.json + aoi/ (contornos) + artefactos (crudos y Parquet ignorados por git)
+>>>>>>> da47292d2e5b5525ef18e4327b2e2d8a19e37e6c
 ```
 
 **Sin Plotly ni MapLibre.** El calendario es un grid de CSS, las series son SVG inline y la rampa de
@@ -440,3 +465,5 @@ features. El espacio libre es impacto local, flujo del respondedor y validación
 - **Cambio de fuente** (2026-11-15): la ingesta pasa a leer solo del mirror Portolan (`pipeline/firms.py`),
   igual que Kiln Watch. Se eliminan la API de área, la `MAP_KEY` y sus scripts. El mirror se comprobó contra
   los archivos oficiales de NASA FIRMS (§9.3).
+- **Regiones del demo** (2026-11-15): se cierra D6. España (península y Baleares) y Aragón, con contornos
+  oficiales del IGN en `data/aoi/`. Se quitan las 9 regiones candidatas de `regions.json` (§9.7).
