@@ -1,6 +1,8 @@
 # Secrets
 .env
 .env.local
+.env.*
+!.env.example
 
 # Python
 .venv/
@@ -25,3 +27,4 @@ out/
 .DS_Store
 Thumbs.db
 *.log
+.alt
