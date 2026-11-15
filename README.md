@@ -6,8 +6,8 @@ just telling me that a new satellite turned on?*
 
 NASA Space Apps Challenge 2026 — [*Harmonization of MODIS and VIIRS Hot Spots*](https://www.spaceappschallenge.org/).
 
-**Status:** pre-release. Ingest, normalization and API plumbing are implemented and tested; harmonized
-artifacts and the web client are in progress.
+**Status:** pre-release. Ingest (Portolan GeoParquet mirror of NASA FIRMS, no key) and API plumbing are
+implemented and tested; harmonized artifacts and the web client are in progress.
 
 ![Raw hotspot counts jump when new satellites arrive; the harmonized record stays level](docs/img/salto_2012.svg)
 
@@ -34,7 +34,7 @@ VIIRS sees and MODIS misses entirely.
 
 ![The same fire, split differently by pixel size](docs/img/pixeles_modis_viirs.svg)
 
-Plot the raw counts and the series jumps in 2012, again in 2018 and again in 2023, each time a VIIRS
+Plot the raw counts and the series jumps in 2012, again in 2018 and again in 2024, each time a VIIRS
 satellite joins. Nothing changed on the ground. Only the camera did.
 
 A single correction factor does not fix this, because the ratio is **seasonal**: during the dry season
@@ -64,42 +64,56 @@ The native per-sensor counts stay available in the CSV export.
 ## 3. Data
 
 All hotspot data comes from **[NASA FIRMS](https://firms.modaps.eosdis.nasa.gov/)** (Fire Information for
-Resource Management System).
+Resource Management System), read through the
+**[Portolan mirror](https://source.coop/portolan-mirrors/firms-catalog)**: every FIRMS detection as one
+GeoParquet file per year, CC0, no key and no rate limit. This is the only ingest path.
 
-| Source | Coverage |
-|---|---|
-| `MODIS_SP` (C6.1) | 2000-11-01 → present (~5 month lag) |
-| `VIIRS_SNPP_SP` (375 m) | 2012-01-20 → **2026-11-02 (mission ended)** |
-| `VIIRS_NOAA20_SP` (375 m) | 2018-04-01 → present |
-| `VIIRS_NOAA21_SP` (375 m) | 2023-03-01 → present |
-
-S-NPP stopped delivering data on 2026-11-02, so the recent tail depends on NOAA-20 (and NOAA-21). Near
-real-time sources (`_NRT`) cover the lag window; standard processing (`_SP`) is preferred wherever both
-exist.
-
-**Access:** the FIRMS Area API returns at most **5 days per request** and allows **5000 transactions per
-10 minutes**. A 25-year record therefore cannot be queried live — it is ingested once, cached, and served
-from precomputed artifacts. `scripts/budget.py` prints the real cost:
-
-| Regions covered | Transactions | Wall clock waiting on the rate limit |
+| Sensor in the mirror | Platform | Coverage |
 |---|---|---|
-| 1 | 19,416 | ~0.6 h |
-| 3 | 58,248 | ~1.9 h |
-| 9 | 174,744 | ~5.8 h |
+| `MODIS` (C6.1, 1 km) | Terra, Aqua | 2000-11-01 → present (Aqua from 2002-07) |
+| `VIIRS_SNPP` (375 m) | Suomi-NPP | 2012-01-20 → **2026-11-02 (mission ended)** |
+| `VIIRS_NOAA20` (375 m) | NOAA-20 | 2018-04-01 → present |
+| `VIIRS_NOAA21` (375 m) | NOAA-21 | 2024-01-17 → present |
 
-That budget is why the product ships a set of curated regions with a full record, plus a
-limited-coverage mode for arbitrary areas, instead of pretending to cover the planet interactively.
+Science-quality rows (`quality = 'sp'`) replace near-real-time rows (`'nrt'`) about three to four months
+later, so the recent months are provisional. S-NPP stopped on 2026-11-02, so the recent tail depends on
+NOAA-20 and NOAA-21. Last days are measured from the data (`sensor_days`), never hard-coded.
+
+**What the mirror does and does not do.** It carries the FIRMS columns verbatim (only `geometry` instead of
+latitude/longitude, expanded satellite names and an integer `confidence_pct` for MODIS). **Nothing is
+harmonized upstream**: counts still jump when a satellite joins, `confidence` is still 0-100 for MODIS and
+l/n/h for VIIRS, and `type` is empty for every near-real-time row. That work stays in `pipeline/`.
+
+**How it is read.** Rows are sorted along a Hilbert curve in ~100k-row groups, each with its own bounding
+box, so DuckDB downloads only the row groups that touch the region. For central Spain in 2016 that is 2 of
+248 row groups. We read `year=YYYY/detections.parquet` only; the same folders also hold aggregates and a
+`live.parquet` that repeats the last week.
+
+**Verified against NASA (2026-11-15).** Detections in central Spain (-5.5, 38.5, -1.0, 42.3) counted in the
+mirror and in the official NASA FIRMS country files are identical:
+
+| Year | Aqua | Terra | Suomi-NPP | NOAA-20 |
+|---|---|---|---|---|
+| 2016 | 262 = 262 | 282 = 282 | 1,891 = 1,891 | |
+| 2022 | 488 = 488 | 526 = 526 | 2,892 = 2,892 | 3,682 = 3,682 |
+
+**What we cache** (`data/cache/<region>/<year>.parquet`): every detection with `acq_datetime`, `acq_date`,
+`sensor`, `satellite`, `daynight`, `quality`, `version`, `type`, `confidence`, `confidence_pct`, `lat`, `lon`,
+`frp`, `scan`, `track`. All confidence levels are kept; the filter (`CONF_SQL`: MODIS ≥ 30, VIIRS not `l`) is
+applied in the harmonization step so its effect can be reported. `data/sensor_days.parquet` holds the days on
+which each satellite delivered any detection anywhere on Earth: the denominator for partial months.
 
 ## 4. Architecture
 
 ```
-NASA FIRMS Area API
+NASA FIRMS ──► Portolan GeoParquet mirror (CC0, one file per year)
+        │       read in place with DuckDB, only the region's row groups
         │  (pipeline only, never at request time)
         ▼
-   pipeline/          ingest → normalize → grid → harmonize
+   pipeline/          firms (ingest) → harmonize
         │
         ▼
-   data/processed/    Parquet artifacts (gitignored, rebuilt by scripts)
+   data/processed/    Parquet artifacts (gitignored, rebuilt by the pipeline)
         │
         ▼
    services/api/      FastAPI + DuckDB, read-only
@@ -110,7 +124,7 @@ NASA FIRMS Area API
 
 Three deliberate boundaries:
 
-- **The API never calls FIRMS.** A 5-day request cap cannot serve an interactive calendar.
+- **The API never reads FIRMS or the mirror.** It serves precomputed artifacts only.
 - **The pipeline is not the backend.** Merging them puts pandas and the whole ETL inside the API image.
 - **Next.js is presentation only.** No DuckDB in serverless functions; the data layer stays in FastAPI.
 
@@ -119,14 +133,15 @@ Three deliberate boundaries:
 ```
 apps/web/              Next.js client (created with create-next-app)
 services/api/          FastAPI service and the artifact contract
-pipeline/              ingest client, normalizer, tests
-  firms.py             Area API client: 5-day chunking, transaction budget, resumable cache
+pipeline/              ingest, normalizer, tests
+  firms.py             ingest: Portolan mirror, per region and year cache, sensor days
+  regions.py           loads and validates data/regions.json, antimeridian split
   normalize.py         sensor-agnostic schema, confidence and acquisition time
 data/regions.json      area of interest list, shared by pipeline and API
-data/raw/              cached API responses (gitignored)
+data/cache/            mirror reads, one Parquet per region and year (gitignored)
+data/sensor_days.parquet  observing days per satellite (gitignored)
 data/processed/        Parquet artifacts (gitignored)
 docs/                  problem definition in Spanish and English, diagrams
-scripts/               timed probe and rate-limit budget calculator
 ```
 
 ## 6. Quickstart
@@ -135,24 +150,25 @@ scripts/               timed probe and rate-limit budget calculator
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r pipeline\requirements.txt -r services\api\requirements.txt
-Copy-Item env.example .env
 ```
 
-Get a free FIRMS `MAP_KEY` at <https://firms.modaps.eosdis.nasa.gov/api/map_key/> — it arrives by email
-within seconds — and paste it into `.env`. The key is a credential; `.env` is gitignored.
-
-Then measure the API before planning around it:
+No key and no `.env` are needed. The first run downloads the DuckDB `spatial` and `httpfs` extensions and
+the global sensor-days table (three columns per year, once):
 
 ```powershell
-python -m pipeline.ingest --dry-run --region chaco --source MODIS_SP
-python scripts\check_firms.py --region chaco --source MODIS_SP --year 2020
+python -m pipeline.firms iberia --dry-run
+python -m pipeline.firms iberia --from-year 2016 --to-year 2016
+python -m pipeline.firms iberia
 ```
+
+The summary printed at the end already shows the problem: the detection count per year jumps in 2012, when
+Suomi-NPP joins.
 
 | Command | Purpose |
 |---|---|
-| `python -m pipeline.tests.test_chunking` | request-window splitting (pure) |
+| `python -m pipeline.tests.test_firms` | bounding box, query and cache freshness (pure) |
 | `python -m pipeline.tests.test_normalize` | confidence and time normalization (pure) |
-| `python -m pipeline.ingest --region chaco --source MODIS_SP --from 2000-11-01` | fetch and cache |
+| `python -m pipeline.firms` | ingest every region in `data/regions.json`, resumable |
 | `cd services\api; uvicorn main:app --reload` | API on <http://localhost:8000/docs> |
 | `cd apps; npx create-next-app@latest web --ts --tailwind --eslint --app --src-dir --import-alias "@/*"` | create the client once |
 
@@ -171,9 +187,11 @@ worse than an honest error.
 
 ## 8. Quality gates
 
-- **Unit tests** pin the two silent failure modes: window chunking (a gap means missing days) and
-  confidence normalization (MODIS `0–100` versus VIIRS `l/n/h`).
-- **Step test:** raw counts must jump across 2012/2018/2023 while the harmonized index stays flat. If it
+- **Unit tests** pin the silent failure modes: the area filter and the cache rule (a wrong box or a stale
+  year means missing detections) and confidence handling (MODIS `0–100` versus VIIRS `l/n/h`).
+- **Source check:** the mirror must match the official NASA FIRMS files on a test area (done for 2016 and
+  2022, see §3).
+- **Step test:** raw counts must jump across 2012/2018/2024 while the harmonized index stays flat. If it
   jumps, the calibration is wrong.
 - **Denial test:** rebuild the record from VIIRS alone and check it against what Aqua actually observed.
 - **Published limitations:** regions where the method under- or over-corrects are listed, not hidden.
@@ -188,4 +206,14 @@ worse than an honest error.
 ## 10. Attribution
 
 Hotspot data: NASA FIRMS / LANCE, MODIS Collection 6.1 and VIIRS 375 m active fire products.
+Read through the Portolan mirror of FIRMS on Source Cooperative (CC0):
+<https://source.coop/portolan-mirrors/firms-catalog>.
+
+We acknowledge the use of data and/or imagery from NASA's Fire Information for Resource Management System
+(FIRMS) (https://earthdata.nasa.gov/firms), part of NASA's Earth Observing System Data and Information
+System (EOSDIS).
+
+The ingest approach (remote GeoParquet read in place with DuckDB, a per-year cache and a measured
+sensor-days table) follows the one published by Kiln Watch (Team Off The Binary, NASA Space Apps 2026,
+<https://github.com/Aalvee-Aarham/kiln-watch>). Our implementation is our own.
 Fire imagery credit for the challenge: CONAE (National Commission of Space Activities of Argentina).
