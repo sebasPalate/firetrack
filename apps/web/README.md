@@ -37,11 +37,13 @@ $env:NEXT_PUBLIC_API_BASE = "http://localhost:8000"; npm run dev
 
 Both modes are built by `pipeline/payloads.py`, so they show the same numbers.
 
-## Deploy (Vercel)
+## Deploy
 
-New project from the repository, **Root Directory** `apps/web`, framework preset Next.js, no environment
-variables. Leave `NEXT_PUBLIC_API_BASE` unset so the site reads `public/data/`. For a host under a sub-path
-(GitHub Pages) also set `NEXT_PUBLIC_BASE_PATH`, for example `/firetrack`.
+- **GitHub Pages:** merge to `main`. The `Deploy web to GitHub Pages` workflow builds the static export
+  with `NEXT_PUBLIC_BASE_PATH=/firetrack` and publishes it automatically. Enable Pages with **GitHub Actions**
+  as the source in the repository settings.
+- **Vercel:** create a project with **Root Directory** `apps/web`, framework preset Next.js, and no environment
+  variables. Leave `NEXT_PUBLIC_API_BASE` unset so the site reads `public/data/`.
 
 ## What is here
 
