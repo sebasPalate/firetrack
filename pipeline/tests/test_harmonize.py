@@ -29,8 +29,10 @@ from pipeline.harmonize import (
     build_calibration,
     days_in_month,
     detection_query,
+    holdout,
     is_complete,
     load_coverage,
+    load_region,
     month_key,
     monthly_counts,
     pick_source,
@@ -290,7 +292,7 @@ def test_write_artifacts_produces_the_contract_the_api_reads() -> None:
         calendar = root / "processed" / "calendar" / "testregion.parquet"
         hotspots = root / "processed" / "hotspots" / "testregion.parquet"
         assert calendar.exists() and hotspots.exists()
-        assert (root / "processed" / "method.json").exists()
+        assert (root / "processed" / "method" / "testregion.json").exists()
         assert payload["rows"] == 1
 
         con = duckdb.connect()
@@ -313,7 +315,7 @@ def test_write_artifacts_produces_the_contract_the_api_reads() -> None:
         assert high == 2  # two retained rows with a VIIRS 'h' band
         assert modis80 == 1  # MODIS 80 maps to 0.8, not to 80
 
-        method = json.loads((root / "processed" / "method.json").read_text(encoding="utf-8"))
+        method = json.loads((root / "processed" / "method" / "testregion.json").read_text(encoding="utf-8"))
         assert method["units"].startswith("harmonized activity index")
         assert "limitations" in method and method["validation"]["median_abs_error_pct"] is not None
 
@@ -323,6 +325,90 @@ def test_the_detection_query_never_globs_the_aggregate_files() -> None:
     assert sql.count("*.parquet") == 1
     assert "confidence_pct >= 30" in sql and "confidence <> 'l'" in sql
     assert "coalesce(type, 0) = 0" in sql
+
+
+# ------------------------------------------- boundary, borrowed shape, blind test
+
+
+def test_load_region_clips_every_count_to_the_boundary() -> None:
+    # A square around the synthetic rows (40.0, -3.5) and one that misses them.
+    around = [[[[-4.0, 39.5], [-3.0, 39.5], [-3.0, 40.5], [-4.0, 40.5], [-4.0, 39.5]]]]
+    elsewhere = [[[[0.0, 39.5], [1.0, 39.5], [1.0, 40.5], [0.0, 40.5], [0.0, 39.5]]]]
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _write_synthetic_cache(root)
+        con = duckdb.connect()
+        try:
+            view, stats = load_region(con, "testregion", data_dir=root, polygons=around)
+            assert stats == {"in_bbox": 6, "in_boundary": 6}
+            assert sum(n for *_k, n in monthly_counts(con, "testregion", relation=view)) == 6
+            view, stats = load_region(con, "testregion", data_dir=root, polygons=elsewhere)
+            assert stats == {"in_bbox": 6, "in_boundary": 0}
+            assert monthly_counts(con, "testregion", relation=view) == []
+        finally:
+            con.close()
+
+
+def _seasonal_counts(ratio_by_month: dict[int, float], aqua: int) -> list[tuple]:
+    counts = []
+    for year in (2012, 2013, 2014, 2015):
+        for month, ratio in ratio_by_month.items():
+            counts.append((year, month, REFERENCE, aqua))
+            counts.append((year, month, PRIMARY, round(aqua * ratio)))
+    return counts
+
+
+def _coverage_for(years, months) -> dict[str, dict[int, int]]:
+    return {
+        sensor: {year * 100 + month: days_in_month(year, month) for year in years for month in months}
+        for sensor in (REFERENCE, PRIMARY, TAIL)
+    }
+
+
+def test_a_small_region_borrows_the_seasonal_shape_of_a_larger_one() -> None:
+    years, months = (2012, 2013, 2014, 2015), (1, 7)
+    coverage = _coverage_for(years, months)
+    # The large region: July sees twice the ratio of January.
+    parent = build_calibration(_seasonal_counts({1: 3.0, 7: 6.0}, 500), coverage, last_complete_year=2015)
+    # The small region: one Aqua detection per month, the same ratio in both months.
+    small = _seasonal_counts({1: 4.5, 7: 4.5}, 1)
+    flat = build_calibration(small, coverage, last_complete_year=2015)
+    shaped = build_calibration(small, coverage, last_complete_year=2015, prior_calibration={**parent, "region": "big"})
+    assert flat["monthly"]["01"]["factor"] == flat["monthly"]["07"]["factor"]
+    assert shaped["monthly"]["07"]["factor"] > shaped["monthly"]["01"]["factor"]
+    assert shaped["pooled"] == flat["pooled"]  # the level stays the small region's own
+    assert shaped["prior"] == {"region": "big", "pooled": parent["pooled"]}
+    assert flat["prior"] is None
+
+
+def test_the_blind_test_is_fitted_only_before_the_hidden_years() -> None:
+    years, months = range(2012, 2021), (7,)
+    coverage = _coverage_for(years, months)
+    counts = []
+    for year in years:
+        counts.append((year, 7, REFERENCE, 100))
+        # VIIRS sees 3x until 2016 and 6x afterwards: an in-sample fit would hide it.
+        counts.append((year, 7, PRIMARY, 300 if year <= 2016 else 600))
+    report = holdout(counts, coverage)
+    assert report["train"] == ["2012-02", "2016-12"] and report["test"] == ["2017-01", "2020-12"]
+    assert report["calibration"]["monthly"]["07"]["factor"] == 3.0
+    assert report["months"] == 4
+    assert report["error_pct"] == 100.0  # 600 / 3 = 200 against 100 Aqua
+    assert report["raw_error_pct"] == 500.0
+    assert holdout(counts, coverage, test=(2030, 2031)) is None
+
+
+def test_the_blind_test_reports_month_order_with_spearman() -> None:
+    years, months = range(2012, 2021), (1, 4, 7, 10)
+    coverage = _coverage_for(years, months)
+    counts = []
+    for year in years:
+        for month, aqua in ((1, 10), (4, 40), (7, 90), (10, 30)):
+            counts.append((year, month, REFERENCE, aqua))
+            counts.append((year, month, PRIMARY, aqua * 4))
+    report = holdout(counts, coverage)
+    assert report["spearman_monthly"] > 0.9
+    assert report["error_pct"] == 0.0
 
 
 def _run_all() -> None:
