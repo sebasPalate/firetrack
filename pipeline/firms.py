@@ -1,207 +1,292 @@
-"""FIRMS Area API client.
+"""Read NASA FIRMS detections from the public Portolan GeoParquet mirror and cache them locally.
 
-Design constraints that shape this module (verified 2026-11-14):
+This is the only ingest path. No MAP_KEY, no rate limit, no 5-day window.
 
-* ``DAY_RANGE`` is capped at 5 days, so any longer span must be chunked.
-* A ``MAP_KEY`` allows 5000 transactions per 10 minutes, and roughly one
-  transaction per day requested, so the throttle counts transactions rather
-  than requests.
-* Responses are cached on disk, which makes ingestion resumable: a crashed run
-  never re-downloads a window it already has.
-* Sensor coverage differs and VIIRS S-NPP ended on 2026-11-02, so coverage is
-  declared per source instead of assumed.
+The mirror (https://source.coop/portolan-mirrors/firms-catalog) republishes every
+FIRMS detection, MODIS (Terra, Aqua) and VIIRS (Suomi-NPP, NOAA-20, NOAA-21),
+science-quality (``quality = 'sp'``) and near-real-time (``'nrt'``) rows, as one
+GeoParquet file per year. Facts verified on 2026-11-15:
+
+* Path: ``detections/year=YYYY/detections.parquet``. Never glob
+  ``year=*/*.parquet``: the same folders also hold aggregate files with another
+  schema.
+* The FIRMS columns are carried verbatim. ``latitude``/``longitude`` live in
+  ``geometry``, satellite codes are expanded (``Aqua``, ``Suomi-NPP``...), and
+  ``confidence_pct`` is the MODIS 0-100 value as an integer (NULL for VIIRS).
+* Nothing is harmonized upstream: counts still jump when a satellite joins,
+  and ``type`` is NULL for every near-real-time row.
+* Rows are sorted along a Hilbert curve in ~100k-row row groups with a
+  bounding box per row group, so a box filter reads only the row groups that
+  touch the area (2016: 2 of 248 for central Spain).
+* Cross-check against the official NASA FIRMS country files for central Spain
+  (-5.5, 38.5, -1.0, 42.3): 2016 Aqua 262, Terra 282, Suomi-NPP 1,891 and 2022
+  Aqua 488, Terra 526, Suomi-NPP 2,892, NOAA-20 3,682, identical in both.
+
+One cached row = one detection with every confidence level, so the confidence
+filter (``CONF_SQL``) is applied and measured in the harmonization step instead
+of being baked in here.
+
+    python -m pipeline.firms                     # every region in data/regions.json
+    python -m pipeline.firms iberia chaco        # some regions
+    python -m pipeline.firms iberia --from-year 2016 --to-year 2016
+
+The layout (remote GeoParquet read with DuckDB, a per-year cache and a measured
+sensor-days table) follows Kiln Watch (Team Off The Binary, NASA Space Apps 2026,
+https://github.com/Aalvee-Aarham/kiln-watch). The code is our own.
 """
 
 from __future__ import annotations
 
+import argparse
+import datetime as dt
+import os
+import sys
+import threading
 import time
-from collections import deque
-from dataclasses import dataclass, field
-from datetime import date, timedelta
 from pathlib import Path
 
-BASE_URL = "https://firms.modaps.eosdis.nasa.gov/api/area/csv"
-MAX_DAY_RANGE = 5
-DEFAULT_TRANSACTION_BUDGET = 4500  # documented limit is 5000 / 10 min
-DEFAULT_WINDOW_SECONDS = 600
+from pipeline.env import load_env
+from pipeline.regions import envelopes, load_regions
 
-#: First date with data per source. ``None`` as end means "still producing".
-SOURCE_COVERAGE: dict[str, tuple[date, date | None]] = {
-    "MODIS_SP": (date(2000, 11, 1), None),
-    "VIIRS_SNPP_SP": (date(2012, 1, 20), date(2026, 11, 2)),
-    "VIIRS_NOAA20_SP": (date(2018, 4, 1), None),
-    "VIIRS_NOAA21_SP": (date(2023, 3, 1), None),
+load_env()  # optional .env overrides (FIRETRACK_FIRMS_BASE, FIRETRACK_DATA_DIR); no credentials
+
+BASE = os.environ.get(
+    "FIRETRACK_FIRMS_BASE", "https://data.source.coop/portolan-mirrors/firms-catalog/detections"
+).rstrip("/")
+DATA = Path(os.environ.get("FIRETRACK_DATA_DIR", Path(__file__).resolve().parents[1] / "data"))
+CACHE = DATA / "cache"
+FIRST_YEAR = 2000
+LIVE_TTL_S = 6 * 3600  # refetch the running year after 6 h: near-real-time rows arrive hourly
+WORKERS = 8
+ATTEMPTS = 3
+
+#: First day with data per sensor, as published by FIRMS. Last days are never
+#: hard-coded: they are measured from the data in ``sensor_days()``.
+SENSOR_START = {
+    "MODIS": "2000-11-01",
+    "VIIRS_SNPP": "2012-01-20",
+    "VIIRS_NOAA20": "2018-04-01",
+    "VIIRS_NOAA21": "2024-01-17",
 }
+SENSORS = list(SENSOR_START)
+
+#: Confidence filter for the harmonized series: drop VIIRS 'l' and MODIS below 30.
+#: The two scales are never crosswalked (no official equivalence exists).
+CONF_SQL = "((sensor = 'MODIS' AND confidence_pct >= 30) OR (sensor <> 'MODIS' AND confidence <> 'l'))"
+
+_lock = threading.Lock()
 
 
-class FirmsError(RuntimeError):
-    """Raised when the API returns something that is not a hotspot CSV."""
+# ---------------------------------------------------------------- pure helpers
 
 
-def chunk_date_range(
-    start: date, end: date, max_days: int = MAX_DAY_RANGE
-) -> list[tuple[date, date]]:
-    """Split an inclusive range into contiguous, non-overlapping windows.
-
-    Each window is ``(first_day, last_day)`` and covers at most ``max_days``
-    days. The union of all windows is exactly ``start..end`` with no gaps and no
-    overlap, which is what the ``DATE`` + ``DAY_RANGE`` request shape requires.
-    """
-    if not 1 <= max_days <= MAX_DAY_RANGE:
-        raise ValueError(f"max_days must be between 1 and {MAX_DAY_RANGE}, got {max_days}")
-    if start > end:
-        raise ValueError(f"start {start} is after end {end}")
-
-    windows: list[tuple[date, date]] = []
-    cursor = start
-    step = timedelta(days=max_days - 1)
-    while cursor <= end:
-        window_end = min(cursor + step, end)
-        windows.append((cursor, window_end))
-        cursor = window_end + timedelta(days=1)
-    return windows
+def current_year() -> int:
+    return dt.datetime.now(dt.timezone.utc).year
 
 
-def format_bbox(bbox: tuple[float, float, float, float]) -> str:
-    """Format ``(west, south, east, north)`` the way the API expects it."""
-    west, south, east, north = bbox
-    if not (-180 <= west < east <= 180 and -90 <= south < north <= 90):
-        raise ValueError(f"invalid bbox {bbox}; expected west,south,east,north")
-    return ",".join(f"{value:g}" for value in (west, south, east, north))
+def year_url(year: int, base: str | None = None) -> str:
+    return f"{base or BASE}/year={year}/detections.parquet"
 
 
-def area_url(
-    map_key: str,
-    source: str,
-    bbox: tuple[float, float, float, float],
-    window_start: date,
-    day_range: int,
-) -> str:
-    """Build one Area API request URL.
+def sql_literal(text: str) -> str:
+    """Quote a path or URL for DuckDB."""
+    return "'" + str(text).replace("'", "''") + "'"
 
-    ``day_range`` is expressed as days covered, so a single-day window passes 1.
-    """
+
+def bbox_predicate(bbox) -> str:
+    """SQL filter that keeps detections inside the box (needs the spatial extension)."""
+    parts = [
+        f"ST_Intersects(geometry, ST_MakeEnvelope({w:.6f}, {s:.6f}, {e:.6f}, {n:.6f}))"
+        for w, s, e, n in envelopes(bbox)
+    ]
+    return parts[0] if len(parts) == 1 else "(" + " OR ".join(parts) + ")"
+
+
+def year_select(bbox, year: int, base: str | None = None) -> str:
+    """The query that reads one year of one region from the mirror."""
     return (
-        f"{BASE_URL}/{map_key}/{source}/{format_bbox(bbox)}"
-        f"/{day_range}/{window_start.isoformat()}"
+        "SELECT acq_datetime, acq_date, sensor, satellite, daynight, quality, version, type, "
+        "confidence, confidence_pct, round(ST_Y(geometry), 4) AS lat, round(ST_X(geometry), 4) AS lon, "
+        f"frp, scan, track FROM read_parquet({sql_literal(year_url(year, base))}) "
+        f"WHERE {bbox_predicate(bbox)}"
     )
 
 
-class TransactionBudget:
-    """Rolling-window throttle measured in API transactions."""
-
-    def __init__(
-        self,
-        budget: int = DEFAULT_TRANSACTION_BUDGET,
-        window_seconds: float = DEFAULT_WINDOW_SECONDS,
-        clock=time.monotonic,
-        sleep=time.sleep,
-    ) -> None:
-        self.budget = budget
-        self.window_seconds = window_seconds
-        self._clock = clock
-        self._sleep = sleep
-        self._events: deque[float] = deque()
-
-    def acquire(self, transactions: int = 1) -> None:
-        if transactions > self.budget:
-            raise ValueError(
-                f"request needs {transactions} transactions, budget is {self.budget}"
-            )
-        while True:
-            now = self._clock()
-            while self._events and now - self._events[0] >= self.window_seconds:
-                self._events.popleft()
-            if len(self._events) + transactions <= self.budget:
-                self._events.extend([now] * transactions)
-                return
-            wait = self.window_seconds - (now - self._events[0]) + 0.05
-            self._sleep(max(wait, 0.05))
-
-    def used(self) -> int:
-        return len(self._events)
+def plan_years(from_year: int | None = None, to_year: int | None = None, this_year: int | None = None) -> list[int]:
+    """Inclusive list of years, clamped to the record (2000 .. this year)."""
+    this_year = this_year or current_year()
+    start, end = max(from_year or FIRST_YEAR, FIRST_YEAR), min(to_year or this_year, this_year)
+    if start > end:
+        raise ValueError(f"empty year range: {start}..{end}")
+    return list(range(start, end + 1))
 
 
-def looks_like_hotspot_csv(text: str) -> bool:
-    """True when the payload is a hotspot table rather than an error message."""
-    first_line = text.lstrip().splitlines()[0] if text.strip() else ""
-    return first_line.lower().startswith("latitude")
+def cache_path(region_id: str, year: int, cache: Path | None = None) -> Path:
+    return Path(cache or CACHE) / region_id / f"{year}.parquet"
 
 
-@dataclass
-class FirmsClient:
-    """Caches one CSV per (source, region, window start) on disk."""
+def _fresh(path: Path, year: int, *, this_year: int | None = None, now: float | None = None) -> bool:
+    """A finished year never changes once cached; the running year expires after LIVE_TTL_S."""
+    path = Path(path)
+    if not path.exists():
+        return False
+    if year < (this_year or current_year()):
+        return True
+    return ((now if now is not None else time.time()) - path.stat().st_mtime) < LIVE_TTL_S
 
-    map_key: str
-    cache_dir: Path
-    budget: TransactionBudget = field(default_factory=TransactionBudget)
-    session: object | None = None
-    timeout: float = 60.0
-    max_retries: int = 3
-    sleep=time.sleep
 
-    def __post_init__(self) -> None:
-        if self.session is None:
-            import requests  # imported lazily so the tests stay dependency-free
+# ---------------------------------------------------------------- DuckDB I/O
 
-            self.session = requests.Session()
-        self.cache_dir = Path(self.cache_dir)
 
-    def cache_path(self, source: str, region: str, window_start: date) -> Path:
-        return self.cache_dir / source / region / f"{window_start.isoformat()}.csv"
+def connect():
+    """DuckDB connection able to read remote GeoParquet. The first call downloads the
+    spatial and httpfs extensions, so it needs internet once."""
+    import duckdb  # imported here so the tests stay dependency-free
 
-    def fetch_window(
-        self,
-        source: str,
-        region: str,
-        bbox: tuple[float, float, float, float],
-        window_start: date,
-        days: int,
-    ) -> Path:
-        """Fetch one window, honouring the cache and the transaction budget."""
-        path = self.cache_path(source, region, window_start)
-        if path.exists():
+    con = duckdb.connect()
+    con.execute("INSTALL spatial; LOAD spatial; INSTALL httpfs; LOAD httpfs;")
+    con.execute("SET http_retries = 6; SET http_retry_wait_ms = 2000; SET enable_http_metadata_cache = true;")
+    return con
+
+
+def _copy(con, select_sql: str, out: Path) -> None:
+    """Write a query to Parquet atomically: a crash never leaves half a year cached."""
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(".tmp")
+    con.execute(f"COPY ({select_sql}) TO {sql_literal(tmp.as_posix())} (FORMAT parquet, COMPRESSION zstd)")
+    os.replace(tmp, out)
+
+
+def fetch_year(con, bbox, year: int, out: Path) -> Path:
+    """Cache one year of one region, retrying network errors."""
+    for attempt in range(ATTEMPTS):
+        try:
+            _copy(con, year_select(bbox, year), out)
+            return out
+        except Exception:  # noqa: BLE001 - network errors come in many types
+            if attempt == ATTEMPTS - 1:
+                raise
+            time.sleep(5 * (attempt + 1))
+    return out
+
+
+def fetch_region(region_id: str, bbox, progress=None, years: list[int] | None = None, con=None) -> Path:
+    """Make sure every year is cached. ``progress(year, done, total)`` is called as years finish."""
+    years = years or plan_years()
+    con = con or connect()
+    for i, year in enumerate(years):
+        out = cache_path(region_id, year)
+        if not _fresh(out, year):
+            fetch_year(con, bbox, year, out)
+        if progress:
+            progress(year, i + 1, len(years))
+    return CACHE / region_id
+
+
+def sensor_days(refresh: bool = False, years: list[int] | None = None, con=None) -> Path:
+    """Days on which each sensor delivered at least one detection anywhere on Earth.
+
+    This is the observing-opportunity denominator: a month where a satellite flew
+    only 10 of 30 days must not read as a quiet month. Launches, gaps and the end
+    of Suomi-NPP come from the data instead of hard-coded dates. MODIS also gets
+    one row per platform (MODIS_T = Terra, MODIS_A = Aqua), because Aqua only
+    joined in July 2002. Only three columns of each global file are read.
+    """
+    path = DATA / "sensor_days.parquet"
+    with _lock:
+        if path.exists() and not refresh and (time.time() - path.stat().st_mtime) < LIVE_TTL_S:
             return path
+        con = con or connect()
+        parts = []
+        for year in years or plan_years():
+            part = DATA / "sensor_days" / f"sat-{year}.parquet"
+            if refresh or not _fresh(part, year):
+                _copy(con, f"SELECT DISTINCT sensor, satellite, acq_date FROM read_parquet({sql_literal(year_url(year))})", part)
+            parts.append(sql_literal(part.as_posix()))
+        files = "[" + ", ".join(parts) + "]"
+        _copy(
+            con,
+            f"""SELECT DISTINCT sensor, acq_date FROM read_parquet({files})
+                UNION SELECT DISTINCT 'MODIS_' || left(satellite, 1), acq_date FROM read_parquet({files})
+                WHERE sensor = 'MODIS' ORDER BY 1, 2""",
+            path,
+        )
+        return path
 
-        url = area_url(self.map_key, source, bbox, window_start, days)
-        last_error = "no attempt was made"
-        for attempt in range(self.max_retries):
-            self.budget.acquire(days)
-            response = self.session.get(url, timeout=self.timeout)
-            if response.status_code == 200:
-                if not looks_like_hotspot_csv(response.text):
-                    raise FirmsError(
-                        f"{source} {region} {window_start}: API returned "
-                        f"{response.text.strip()[:200]!r}"
-                    )
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(response.text, encoding="utf-8", newline="")
-                return path
-            last_error = f"HTTP {response.status_code}: {response.text.strip()[:200]}"
-            if response.status_code in {429, 500, 502, 503, 504}:
-                self.sleep(2**attempt)
-                continue
-            break
-        raise FirmsError(f"{source} {region} {window_start}: {last_error}")
 
-    def fetch_range(
-        self,
-        source: str,
-        region: str,
-        bbox: tuple[float, float, float, float],
-        start: date,
-        end: date,
-    ) -> list[Path]:
-        """Fetch every window of an inclusive range, clamped to sensor coverage."""
-        coverage_start, coverage_end = SOURCE_COVERAGE.get(source, (start, None))
-        start = max(start, coverage_start)
-        if coverage_end is not None:
-            end = min(end, coverage_end)
-        if start > end:
-            return []
+def summary(region_id: str, con=None) -> list[tuple]:
+    """Detections per year and satellite in the local cache. Should already show the 2012 step."""
+    folder = CACHE / region_id
+    if not list(folder.glob("*.parquet")):
+        return []
+    con = con or connect()
+    return con.execute(
+        f"""SELECT year(acq_date), satellite, quality, count(*),
+                   count(*) FILTER (WHERE type IN (1, 2, 3)), count(*) FILTER (WHERE type IS NULL)
+            FROM read_parquet({sql_literal(folder.as_posix() + '/*.parquet')})
+            GROUP BY ALL ORDER BY 1, 2, 3"""
+    ).fetchall()
 
-        paths = []
-        for window_start, window_end in chunk_date_range(start, end):
-            days = (window_end - window_start).days + 1
-            paths.append(self.fetch_window(source, region, bbox, window_start, days))
-        return paths
+
+# ---------------------------------------------------------------- CLI
+
+
+def main(argv: list[str] | None = None) -> int:
+    from concurrent.futures import ThreadPoolExecutor
+
+    parser = argparse.ArgumentParser(description="Cache FIRMS detections from the Portolan mirror")
+    parser.add_argument("regions", nargs="*", help="region ids from data/regions.json (default: all)")
+    parser.add_argument("--from-year", type=int)
+    parser.add_argument("--to-year", type=int)
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args(argv)
+
+    regions = load_regions()
+    ids = args.regions or list(regions)
+    unknown = [r for r in ids if r not in regions]
+    if unknown:
+        print(f"unknown region(s) {unknown}; known: {sorted(regions)}", file=sys.stderr)
+        return 2
+    years = plan_years(args.from_year, args.to_year)
+    jobs = [(rid, y) for y in years for rid in ids if not _fresh(cache_path(rid, y), y)]
+
+    print(f"source : {BASE}")
+    print(f"regions: {', '.join(ids)}")
+    print(f"years  : {years[0]}..{years[-1]}, {len(jobs)} region-year file(s) to fetch, cache {CACHE}")
+    if args.dry_run:
+        print("\nfirst query:\n  " + year_select(regions[ids[0]]["bbox"], years[0]))
+        return 0
+
+    # Requests are latency-bound (row-group pruning keeps the bytes small), so run several
+    # (region, year) jobs at once on cursors of one connection, which share the metadata cache.
+    t0 = time.time()
+    db = connect()
+    sensor_days(years=plan_years(), con=db)
+    print(f"sensor days ready {time.time() - t0:.0f}s", flush=True)
+    failed = []
+
+    def one(job):
+        rid, year = job
+        try:
+            fetch_year(db.cursor(), regions[rid]["bbox"], year, cache_path(rid, year))
+            print(f"{rid} {year} {time.time() - t0:.0f}s", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            failed.append(job)
+            print(f"{rid} {year} FAILED: {str(exc)[:200]}", flush=True)
+
+    with ThreadPoolExecutor(WORKERS) as pool:
+        list(pool.map(one, jobs))
+
+    for rid in ids:
+        print(f"\n{rid}\n{'year':<6}{'satellite':<12}{'quality':<9}{'detections':>11}{'static':>8}{'untyped':>9}")
+        for year, sat, quality, n, static, untyped in summary(rid, db):
+            print(f"{year:<6}{sat:<12}{quality:<9}{n:>11}{static:>8}{untyped:>9}")
+    if failed:
+        print(f"\n{len(failed)} file(s) failed: {sorted(failed)}; rerun to retry only those", file=sys.stderr)
+        return 1
+    print(f"\ndone in {time.time() - t0:.0f}s")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
