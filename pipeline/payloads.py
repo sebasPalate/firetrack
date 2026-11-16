@@ -77,13 +77,21 @@ def public_region(region: dict) -> dict:
 
 
 def csv_cell(value: object) -> str:
+    """One CSV field, quoted only when RFC 4180 requires it.
+
+    A comma, a double quote or a line break makes the field ambiguous, so it is
+    wrapped in quotes and its own quotes are doubled. A download that silently
+    breaks a row is worse than one that is slightly larger.
+    """
     if value is None:
         return ""
     text = str(value)
-    return f'"{text}"' if "," in text else text
+    if any(character in text for character in ',"\r\n'):
+        return '"' + text.replace('"', '""') + '"'
+    return text
 
 
 def detections_csv(columns: list[str], rows: list[tuple]) -> str:
     """Header plus one line per detection, the format of ``GET /detections``."""
     body = "\n".join(",".join(csv_cell(value) for value in row) for row in rows)
-    return ",".join(columns) + "\n" + (body + "\n" if body else "")
+    return ",".join(csv_cell(column) for column in columns) + "\n" + (body + "\n" if body else "")

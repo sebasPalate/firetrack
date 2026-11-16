@@ -128,6 +128,21 @@ def is_complete(observed_days: int, year: int, month: int) -> bool:
     return observed_days / days_in_month(year, month) >= MIN_DAYS_FRACTION
 
 
+def running_month(
+    counts: list[tuple], last_observed: tuple[int, int] | None = None
+) -> tuple[int, int] | None:
+    """The month still being observed: the later of the region and the whole record.
+
+    A quiet region can stop detecting in September while the satellites keep
+    flying into November, and the record can hold days the region never burned.
+    Only the later month is the running one, so a finished month is never flagged
+    partial just because it is the last one with detections.
+    """
+    region_last = max(((year, month) for year, month, _s, _n in counts), default=None)
+    candidates = [month for month in (region_last, last_observed) if month is not None]
+    return max(candidates) if candidates else None
+
+
 def pooled_ratio(sensor_total: float, reference_total: float) -> float:
     """The all-year rate, used as the prior and as the fallback."""
     if reference_total <= 0:
@@ -252,6 +267,25 @@ def load_coverage(con, data_dir: Path | None = None) -> dict[str, dict[int, int]
         if name:
             coverage.setdefault(name, {})[month_key(year, month)] = days
     return coverage
+
+
+def last_observed_month(con, data_dir: Path | None = None) -> tuple[int, int] | None:
+    """The last month any satellite observed, from the global ``sensor_days`` table.
+
+    ``None`` when the table is missing or empty, so the caller can fall back to
+    the region's own last month instead of failing.
+
+    The result is consumed with ``fetchall()``: ``fetchone()`` would leave the
+    DuckDB result open and the next ``register()`` on the same connection would
+    fail with ``ResourceInUseException``.
+    """
+    path = Path(data_dir or DATA) / "sensor_days.parquet"
+    if not path.exists():
+        return None
+    rows = con.execute(f"SELECT max(acq_date) FROM read_parquet({sql_literal(path.as_posix())})").fetchall()
+    if not rows or rows[0][0] is None:
+        return None
+    return (rows[0][0].year, rows[0][0].month)
 
 
 # ---------------------------------------------------------------- the calendar
@@ -403,7 +437,9 @@ def build_calendar(
 
     ``raw_count`` sums every satellite, which is the series that jumps when one
     joins. ``harmonized_index`` is the one that should not. ``latest`` is the
-    running month, the only one allowed to be partial.
+    running month, the only one that is partial even after enough days passed
+    ``MIN_DAYS_FRACTION``: the threshold answers "did the sensor fly enough", not
+    "did the month end".
     """
     per_month: dict[tuple[int, int], dict] = {}
     for year, month, satellite, n in counts:
@@ -441,7 +477,8 @@ def build_calendar(
                 "source": source,
                 "factor": round(factor, 4) if factor else None,
                 "observed_days": observed,
-                "partial": bool(source) and not is_complete(observed, year, month),
+                "partial": latest == (year, month)
+                or (bool(source) and not is_complete(observed, year, month)),
                 "provisional": fitted_through is not None and year > fitted_through,
                 "aqua": per_satellite.get(REFERENCE, 0),
                 "terra": per_satellite.get(BRIDGE, 0),
@@ -618,6 +655,8 @@ def write_artifacts(
     boundary: dict | None = None,
 ) -> dict:
     root = Path(data_dir or DATA)
+    if not rows:
+        raise ValueError(f"no usable months for {region}: nothing to write")
     processed = root / "processed"
     calendar_path = processed / "calendar" / f"{region}.parquet"
     hotspots_path = processed / "hotspots" / f"{region}.parquet"
@@ -711,8 +750,14 @@ def main(argv: list[str] | None = None) -> int:
     relation, boundary = load_region(con, args.region, polygons=polygons)
     counts = monthly_counts(con, args.region, relation=relation)
     coverage = load_coverage(con)
+    if not coverage:
+        print(
+            f"no sensor coverage: {DATA / 'sensor_days.parquet'} is missing or empty\n"
+            f"run  python -m pipeline.firms {args.region}  to rebuild it, then retry"
+        )
+        return 2
     last_full = max(year for year, _m, _s, _n in counts) - 1
-    latest = max((year, month) for year, month, _s, _n in counts)
+    latest = running_month(counts, last_observed_month(con))
     calibration = build_calibration(counts, coverage, last_complete_year=last_full, prior_calibration=prior)
     rows = build_calendar(counts, coverage, calibration, latest=latest)
     validation = validate(rows, last_complete_year=last_full)

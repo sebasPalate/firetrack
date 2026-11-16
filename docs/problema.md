@@ -46,7 +46,7 @@ pequeña de la derecha ni siquiera aparece en MODIS.
 **Consecuencia:** si pintamos la serie histórica tal cual, en 2012 el número de focos se dispara. Parece
 que de repente hay muchísimo más fuego, pero lo único que ha cambiado es la cámara.
 
-![Gráfico: focos contados sin ajustar (arriba) frente al índice armonizado (abajo), totales anuales de Iberia desde 2001. La serie sin ajustar salta cuando entra Suomi-NPP en 2012 y se infla en 2024 con NOAA-21 ya en órbita; el índice se mueve con los incendios, no con la cámara.](img/salto_2012.svg)
+![Gráfico: focos contados sin ajustar (arriba) frente al índice armonizado (abajo), totales anuales de España desde 2001. La serie sin ajustar salta cuando entra Suomi-NPP en 2012 y se infla en 2024 con NOAA-21 ya en órbita; el índice se mueve con los incendios, no con la cámara.](img/salto_2012.svg)
 
 > Es como cambiar el radar de tráfico por uno más sensible y concluir que la gente conduce peor.
 
@@ -159,9 +159,10 @@ hora de observación. Terra actúa solo como puente 2000–2002.
 
 Detalle de implementación: razón de totales por mes calendario, **un solo factor por mes, día y noche
 juntos**, con suavizado tipo empirical Bayes para celdas con pocas muestras. Separar día y noche parecía más
-honesto y mide peor: en Iberia los factores de cada mitad difieren entre 3 y 7 veces y la proporción de
-detecciones diurnas se mueve año a año, así que corregir cada mitad por separado sobrecorrige entre 45 % y
-280 %. Con un factor por mes el error mediano contra Aqua queda en 3,5 %.
+honesto y mide peor: en la caja de Iberia anterior los factores de cada mitad difieren entre 3 y 7 veces y la
+proporción de detecciones diurnas se mueve año a año, así que corregir cada mitad por separado sobrecorrige
+entre 45 % y 280 %. Con un factor por mes, la región de España que se sirve queda en un error mediano contra
+Aqua de 10,1 % (peor año 32,5 %, 2018); la caja de Iberia retirada medía 3,5 % (peor 12,6 %).
 
 Un solo VIIRS a la vez: Suomi-NPP lleva la serie mientras vuela y NOAA-20 solo rellena la cola desde que
 S-NPP terminó (2026-11-02), con su propio factor medido. Sumar satélites es exactamente el salto que este
@@ -221,8 +222,9 @@ Las filas definitivas (`sp`) sustituyen a las de tiempo casi real (`nrt`) unos 3
 los últimos meses son provisionales. FIRMS publica NOAA-21 definitivo desde el 2023-03-01, pero el mirror lo
 trae desde el 2024-01-17.
 
-**Hallazgo crítico:** S-NPP ya no entrega datos. La cola reciente depende de NOAA-20, NOAA-21 y las filas
-NRT. Los últimos días de cada satélite se miden en los datos (`sensor_days`), nunca se escriben a mano.
+**Hallazgo crítico:** S-NPP ya no entrega datos. La cola del índice se apoya en NOAA-20, con su propio factor
+medido; NOAA-21 aparece solo en los conteos crudos y el CSV, y los últimos meses además mezclan filas NRT. Los
+últimos días de cada satélite se miden en los datos (`sensor_days`), nunca se escriben a mano.
 
 ### 9.3 Ingesta: mirror Portolan (única vía, decisión D7)
 

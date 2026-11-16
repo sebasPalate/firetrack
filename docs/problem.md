@@ -45,7 +45,7 @@ small burn on the right does not appear in MODIS at all.
 **Consequence:** plot the historical series as-is and the count explodes in 2012 and again in 2024. It looks
 like there is suddenly far more fire, when the only thing that changed is how many cameras are counting.
 
-![Chart: raw hotspot counts (top) versus the harmonized index (bottom), yearly totals for Iberia from 2001. The raw series jumps when Suomi-NPP joins in 2012 and inflates in 2024 with NOAA-21 already flying; the index follows the fires, not the camera.](img/salto_2012.svg)
+![Chart: raw hotspot counts (top) versus the harmonized index (bottom), yearly totals for Spain from 2001. The raw series jumps when Suomi-NPP joins in 2012 and inflates in 2024 with NOAA-21 already flying; the index follows the fires, not the camera.](img/salto_2012.svg)
 
 > It is like swapping the traffic radar for a more sensitive one and concluding that people drive worse.
 
@@ -157,9 +157,10 @@ only acts as a bridge for 2000–2002.
 
 Implementation detail: ratio of totals per calendar month, **one factor per month, day and night
 together**, with empirical-Bayes shrinkage for cells with few samples. Splitting day from night looks more
-honest and measures worse: on Iberia the half-day factors differ three- to seven-fold while the day/night
-share drifts year to year, so correcting each half separately over-corrected by 45–280 %. With one factor
-per month the median error against Aqua is 3.5 %.
+honest and measures worse: on the earlier Iberia box the half-day factors differ three- to seven-fold while
+the day/night share drifts year to year, so correcting each half separately over-corrected by 45–280 %. With
+one factor per month the shipped Spain region lands at a median |error| against Aqua of 10.1 % (worst year
+32.5 %, 2018); the retired Iberia box measured 3.5 % (worst 12.6 %).
 
 One VIIRS at a time: Suomi-NPP carries the series while it flies, and NOAA-20 only fills the tail after
 S-NPP stopped (2026-11-02), with its own measured factor. Summing satellites is exactly the step this
@@ -218,8 +219,9 @@ Science-quality rows (`sp`) replace near-real-time rows (`nrt`) about three to f
 latest months are provisional. FIRMS publishes science-quality NOAA-21 from 2023-03-01, but the mirror
 carries it from 2024-01-17.
 
-**Critical finding:** S-NPP no longer delivers data. The recent tail depends on NOAA-20, NOAA-21 and the NRT
-rows. The last day of each satellite is measured from the data (`sensor_days`), never typed in.
+**Critical finding:** S-NPP no longer delivers data. The index tail rests on NOAA-20, with its own measured
+factor; NOAA-21 appears only in the raw counts and the CSV, and the latest months still mix NRT rows. The last
+day of each satellite is measured from the data (`sensor_days`), never typed in.
 
 ### 9.3 Ingest: Portolan mirror (the only path, decision D7)
 
