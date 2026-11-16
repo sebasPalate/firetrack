@@ -12,8 +12,10 @@ or with pytest if it is installed.
 
 from __future__ import annotations
 
+import io
 import json
 import tempfile
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import duckdb
@@ -32,12 +34,15 @@ from pipeline.harmonize import (
     detection_query,
     holdout,
     is_complete,
+    last_observed_month,
     load_coverage,
     load_region,
+    main,
     month_key,
     monthly_counts,
     pick_source,
     pooled_ratio,
+    running_month,
     shrink_ratio,
     validate,
     write_artifacts,
@@ -199,6 +204,92 @@ def test_the_running_month_is_flagged_partial() -> None:
     assert rows[0]["partial"] is True
     assert rows[0]["observed_days"] == 14
     assert rows[0]["harmonized_index"] is not None
+
+
+def test_the_running_month_stays_partial_after_sixty_percent_of_its_days() -> None:
+    """Day 20 of a 30-day month: 20 observed days pass the 60 % threshold.
+
+    The threshold answers "did the sensor fly enough", not "did the month end".
+    A running month that passes it must still be partial, or the calendar
+    compares a half-finished count against a full-month median.
+    """
+    counts = [(2026, 11, TAIL, 700)]
+    coverage = {PRIMARY: {202611: 0}, TAIL: {202611: 20}, REFERENCE: {202611: 20}}
+    calibration = build_calibration([], {}, last_complete_year=2025)
+    assert is_complete(20, 2026, 11)  # the threshold alone calls it complete
+    rows = build_calendar(counts, coverage, calibration, latest=(2026, 11))
+    assert rows[0]["partial"] is True
+
+
+def test_a_finished_month_is_not_partial_when_the_data_already_moved_on() -> None:
+    """A complete month is not the running one just because it is the last with detections."""
+    counts = [(2026, 10, TAIL, 700)]
+    coverage = {
+        PRIMARY: {202610: 31, 202611: 15},
+        TAIL: {202610: 31, 202611: 15},
+        REFERENCE: {202610: 31, 202611: 15},
+    }
+    calibration = build_calibration([], {}, last_complete_year=2025)
+    rows = build_calendar(counts, coverage, calibration, latest=(2026, 11))
+    assert rows[0]["partial"] is False
+
+
+def test_the_running_month_is_the_later_of_the_data_and_the_region() -> None:
+    counts = [(2026, 10, TAIL, 1)]
+    assert running_month(counts, (2026, 11)) == (2026, 11)
+    assert running_month(counts, (2026, 9)) == (2026, 10)
+    assert running_month(counts, None) == (2026, 10)
+
+
+def test_the_last_observed_month_comes_from_the_sensor_days_table() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _write_synthetic_cache(root)
+        con = duckdb.connect()
+        try:
+            assert last_observed_month(con, data_dir=root) == (2013, 7)
+            assert last_observed_month(con, data_dir=root / "missing") is None
+        finally:
+            con.close()
+
+
+def test_main_refuses_to_run_without_sensor_coverage() -> None:
+    """No ``sensor_days`` table: an actionable message, not a pandas ``KeyError``.
+
+    Without coverage every month has no source, so the usable calendar is empty
+    and the writer used to fail on ``sort_values`` with a bare ``KeyError``.
+    """
+    import pipeline.harmonize as harmonize
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _write_synthetic_cache(root)
+        (root / "sensor_days.parquet").unlink()
+        original = harmonize.DATA
+        harmonize.DATA = root
+        out = io.StringIO()
+        try:
+            with redirect_stdout(out):
+                code = main(["testregion"])
+        finally:
+            harmonize.DATA = original
+    assert code == 2, out.getvalue()
+    assert "sensor_days" in out.getvalue()
+    assert "pipeline.firms" in out.getvalue()
+
+
+def test_write_artifacts_refuses_an_empty_calendar() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        con = duckdb.connect()
+        try:
+            try:
+                write_artifacts(con, "testregion", [], {}, {}, {}, data_dir=Path(tmp))
+            except ValueError as exc:
+                assert "no usable months" in str(exc)
+            else:
+                raise AssertionError("an empty calendar must be refused, not written")
+        finally:
+            con.close()
 
 
 # --------------------------------------------------------------- the contract
