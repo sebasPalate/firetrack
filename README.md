@@ -32,7 +32,7 @@
     <td align="center"><strong>26 years</strong><br><sub>2000-11 to today</sub></td>
     <td align="center"><strong>5 satellites</strong><br><sub>Terra, Aqua, S-NPP, NOAA-20, NOAA-21</sub></td>
     <td align="center"><strong>2 sensors</strong><br><sub>MODIS 1 km · VIIRS 375 m</sub></td>
-    <td align="center"><strong>3.5%</strong><br><sub>median error against Aqua</sub></td>
+    <td align="center"><strong>10.1%</strong><br><sub>median error against Aqua</sub></td>
     <td align="center"><strong>2 regions</strong><br><sub>Spain · Aragón</sub></td>
   </tr>
 </table>
@@ -62,8 +62,7 @@ The shortest way to understand Firetrack is to move from the experience to the e
 | Deployment | Public GitHub Pages demo built from `main` |
 
 Demo regions are `spain` (mainland and Balearic Islands) and `aragon`, whose factors borrow Spain's
-seasonal shape. The figures below were measured on the earlier Iberia box and are redrawn by
-`python -m pipeline.charts`.
+seasonal shape. The figures below are drawn from the `spain` artifacts by `python -m pipeline.charts`.
 
 ---
 
@@ -72,7 +71,7 @@ seasonal shape. The figures below were measured on the earlier Iberia box and ar
 The camera changed twice and the record moved both times. The only question worth asking is whether the
 fires moved with it.
 
-![Raw yearly hotspot counts (top) against the harmonized index (bottom) for Iberia: the raw series jumps in 2012 and inflates 2024, the index follows the fires](docs/img/salto_2012.svg)
+![Raw yearly hotspot counts (top) against the harmonized index (bottom) for Spain: the raw series jumps in 2012 and inflates 2024, the index follows the fires](docs/img/salto_2012.svg)
 
 ### Why this is not a plotting exercise
 
@@ -103,7 +102,7 @@ A single correction factor does not fix this, because the ratio is **seasonal**:
 both sensors see the large fires and VIIRS merely splits them into more pixels, but during agricultural
 burning season VIIRS sees thousands of small fires that MODIS never detects.
 
-![Monthly correction factors measured on Iberia: 4.8 in February, 8.7 in May, pooled 5.87](docs/img/factor_por_mes.svg)
+![Monthly correction factors measured on Spain: 5.5 in January, 8.8 in May, pooled 6.43](docs/img/factor_por_mes.svg)
 
 ## The method
 
@@ -118,10 +117,11 @@ every VIIRS satellite. Calibrating against Aqua holds the diurnal cycle constant
 Terra (~10:30) would mix a change of sensor with a change of observation time.
 
 **One factor per calendar month, day and night together.** Splitting them looks more honest and measures
-worse: on Iberia the half-day factors differ three- to seven-fold while the day/night share drifts year to
-year, and correcting each half separately overshot by 45–280 %. One factor per month lands at 3.5 % median
-error. Sparse months are shrunk towards the pooled factor with an empirical-Bayes prior instead of claiming a
-rate from three observations.
+worse: on the earlier Iberia box the half-day factors differ three- to seven-fold while the day/night share
+drifts year to year, and correcting each half separately overshot by 45–280 %. One factor per month lands at
+a 10.1 % median error on Spain (worst year 32.5 %); the retired Iberia box measured 3.5 %. Sparse months are
+shrunk towards the pooled factor with an empirical-Bayes prior instead of claiming a rate from three
+observations.
 
 **One VIIRS at a time.** Suomi-NPP carries the series while it flies; NOAA-20 only fills the tail after
 S-NPP stopped on 2026-11-02, with its own measured factor. Summing satellites is what creates the 2018 and
@@ -139,14 +139,18 @@ When Suomi-NPP changes the camera, the raw count and the index disagree about wh
 
 | 2011 → 2013 step | Change |
 |---|---|
-| Raw VIIRS counts | **+202.6 %** |
-| Harmonized index | **−25.9 %** |
-| Aqua MODIS itself | **−24.6 %** |
+| Raw VIIRS counts | **+208.8 %** |
+| Harmonized index | **−21.5 %** |
+| Aqua MODIS itself | **−26.8 %** |
 
 The index tracks the ground; the raw count tracks the camera.
 
-Against Aqua through the overlap on Iberia (**2012-02 → 2025**), the index lands at a median \|error\| of
-**3.5 %**, worst **12.6 %**.
+Against Aqua through the overlap on Spain (**2012-02 → 2025**), the index lands at a median \|error\| of
+**10.1 %**, worst year **32.5 %** (2018).
+
+The blind test is the honest error bar: the factors are refitted on 2012-02 → 2016-12, Aqua is hidden, and
+2017-2020 is rebuilt from Suomi-NPP alone. It lands at **7.8 %** total error against Aqua (raw VIIRS:
+**592.2 %**), a median year error of **11.9 %**, and a monthly Spearman rank correlation of **0.943**.
 
 ### How we check it
 
@@ -162,12 +166,13 @@ Against Aqua through the overlap on Iberia (**2012-02 → 2025**), the index lan
 We publish these, not hide them.
 
 - **The recent tail is provisional.** Science-quality rows (`quality = 'sp'`) replace near-real-time rows
-  (`'nrt'`) about three to four months later, and S-NPP stopped on 2026-11-02, so the last months rest on
-  NOAA-20 and NOAA-21 with their own measured factor.
+  (`'nrt'`) about three to four months later, and S-NPP stopped on 2026-11-02, so the index tail rests on
+  NOAA-20 with its own measured factor. NOAA-21 stays in the raw counts and the CSV, never summed into the
+  index.
 - **Partial months are never the baseline.** They are served but kept out of the per-month median, so the
   running month can never set the yardstick it is compared against.
-- **The worst month is not 3.5 % off, it is 12.6 %.** The median is the honest summary; the tail is where
-  the method under- or over-corrects, and those regions are listed in the artifacts rather than smoothed
+- **The worst year is not 10.1 % off, it is 32.5 % (2018).** The median is the honest summary; the tail is
+  where the method under- or over-corrects, and those years are listed in the artifacts rather than smoothed
   away.
 - **Two regions, one borrowed shape.** Aragón has about 40 to 60 vegetation detections a year, so its
   seasonal factors shrink towards Spain's instead of claiming a shape of its own.
@@ -297,7 +302,7 @@ harmonize.py       calibration, monthly index, validation, artifact writer
 payloads.py        the response contract shared by the API and the static export
 regions.py         data/regions.json and the boundaries, point-in-polygon clip
 export_web.py      static JSON and CSV for the web app
-charts.py          the three figures in docs/img
+charts.py          the two generated figures in docs/img
 env.py             settings and cache paths
 tests/             one file per silent failure mode: firms, regions, normalize,
                    harmonize, payloads
@@ -328,7 +333,7 @@ sensor_days.parquet   observing days per satellite (gitignored)
 ```
 docs/problema.md      canonical document, Spanish
 docs/problem.md       full mirror, English
-docs/img/             the three figures, redrawn by python -m pipeline.charts
+docs/img/             the figures; two are redrawn by python -m pipeline.charts
 docs/readme/          hero.png and product.png, hand-made
 
 .github/workflows/    ci.yml runs the pipeline tests and the web lint and build;
@@ -361,7 +366,8 @@ python -m pipeline.harmonize aragon --prior-region spain
 python -m pipeline.export_web
 ```
 
-The full Iberia ingest takes about 158 s and the harmonization a few seconds; both are resumable per year.
+The earlier full-Iberia ingest took about 158 s and the harmonization a few seconds; the ingest is resumable
+per year, so a rerun only fetches what is missing.
 The summary printed by the ingest already shows the problem: the detection count per year jumps in 2012,
 when Suomi-NPP joins. The harmonizer prints the factor table and the validation instead.
 
@@ -400,8 +406,9 @@ GeoParquet file per year, CC0, no key and no rate limit. This is the only ingest
 | `VIIRS_NOAA21` (375 m) | NOAA-21 | 2024-01-17 → present |
 
 Science-quality rows (`quality = 'sp'`) replace near-real-time rows (`'nrt'`) about three to four months
-later, so the recent months are provisional. S-NPP stopped on 2026-11-02, so the recent tail depends on
-NOAA-20 and NOAA-21. Last days are measured from the data (`sensor_days`), never hard-coded.
+later, so the recent months are provisional. S-NPP stopped on 2026-11-02, so the index tail rests on
+NOAA-20; NOAA-21 is in the raw counts, the map and the CSV but is never summed into the index. Last days are
+measured from the data (`sensor_days`), never hard-coded.
 
 **What the mirror does and does not do.** It carries the FIRMS columns verbatim (only `geometry` instead of
 latitude/longitude, expanded satellite names and an integer `confidence_pct` for MODIS). **Nothing is
