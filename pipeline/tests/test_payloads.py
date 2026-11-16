@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+import csv
+import io
+
 from pipeline.payloads import calendar_payload, csv_cell, detections_csv, public_region
 
 REGION = {"id": "x", "name": "X", "bbox": (0.0, 0.0, 1.0, 1.0), "why": "test", "geometry": "data/aoi/x.geojson"}
@@ -40,6 +43,24 @@ def test_public_region_and_csv() -> None:
     assert csv_cell(None) == "" and csv_cell("a,b") == '"a,b"' and csv_cell(3) == "3"
     assert detections_csv(["a", "b"], [(1, None), (2, "x")]) == "a,b\n1,\n2,x\n"
     assert detections_csv(["a"], []) == "a\n"
+
+
+def test_csv_cell_escapes_quotes_and_line_breaks() -> None:
+    """RFC 4180: a field is quoted when it holds a comma, a quote or a newline."""
+    assert csv_cell('say "hi"') == '"say ""hi"""'
+    assert csv_cell("a\nb") == '"a\nb"'
+    assert csv_cell("a\r\nb") == '"a\r\nb"'
+    assert csv_cell("plain") == "plain"
+
+
+def test_detections_csv_round_trips_through_the_standard_parser() -> None:
+    """The served CSV must be readable by any RFC 4180 parser, not just by eye."""
+    text = detections_csv(["a", "b"], [(1, 'x,"y"'), (2, "line\nbreak")])
+    assert list(csv.reader(io.StringIO(text))) == [
+        ["a", "b"],
+        ["1", 'x,"y"'],
+        ["2", "line\nbreak"],
+    ]
 
 
 def _run_all() -> None:
