@@ -1,10 +1,13 @@
 # Firetrack
 
-**One comparable fire record from NASA MODIS and VIIRS.** A burning activity calendar for any area of
-interest, so a fire manager can answer one question honestly: *is this month unusual, or is the record
-just telling me that a new satellite turned on?*
-
-NASA Space Apps Challenge 2026 — [*Harmonization of MODIS and VIIRS Hot Spots*](https://www.spaceappschallenge.org/).
+<p align="center">
+  <strong>A comparable fire-activity record from NASA MODIS and VIIRS, so changes in satellite coverage<br>
+  do not look like changes in fire.</strong><br>
+  A burning activity calendar for an area of interest, so a fire manager can answer one question honestly:<br>
+  <em>is this month unusual, or is the record just telling me that a new satellite turned on?</em>
+  <br><br>
+  NASA Space Apps Challenge 2026 · <em>Harmonization of MODIS and VIIRS Hot Spots</em> · Team FireBallers · Spain
+</p>
 
 <p align="center">
   <a href="https://sebaspalate.github.io/firetrack/"><img src="https://img.shields.io/badge/Live%20demo-open-FF9A3C?style=for-the-badge" alt="Live demo"></a>
@@ -13,15 +16,54 @@ NASA Space Apps Challenge 2026 — [*Harmonization of MODIS and VIIRS Hot Spots*
 </p>
 
 <p align="center">
+  <a href="https://firms.modaps.eosdis.nasa.gov/"><img src="https://img.shields.io/badge/data-NASA%20FIRMS-0B3D91" alt="Data: NASA FIRMS"></a>
+  <a href="https://duckdb.org/"><img src="https://img.shields.io/badge/DuckDB-GeoParquet-FFF000?logo=duckdb&logoColor=black" alt="DuckDB and GeoParquet"></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-Python-009688?logo=fastapi&logoColor=white" alt="FastAPI"></a>
+  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-static%20export-000000?logo=next.js&logoColor=white" alt="Next.js static export"></a>
+  <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-client-61DAFB?logo=react&logoColor=black" alt="React client"></a>
+</p>
+
+<p align="center">
   <img src="docs/readme/hero.png" alt="Raw satellite hotspot counts jump when new satellites arrive; the harmonized record stays level" width="100%">
 </p>
 
-<p align="center"><sub><b>26 years</b> · 2000-11 to today &nbsp;|&nbsp; <b>5 satellites</b> · Terra, Aqua, S-NPP, NOAA-20, NOAA-21 &nbsp;|&nbsp; <b>2 sensors</b> · MODIS 1 km, VIIRS 375 m &nbsp;|&nbsp; <b>3.5 %</b> median error against Aqua &nbsp;|&nbsp; <b>2 demo regions</b> · Spain, Aragón</sub></p>
+<table align="center">
+  <tr>
+    <td align="center"><strong>26 years</strong><br><sub>2000-11 to today</sub></td>
+    <td align="center"><strong>5 satellites</strong><br><sub>Terra, Aqua, S-NPP, NOAA-20, NOAA-21</sub></td>
+    <td align="center"><strong>2 sensors</strong><br><sub>MODIS 1 km · VIIRS 375 m</sub></td>
+    <td align="center"><strong>3.5%</strong><br><sub>median error against Aqua</sub></td>
+    <td align="center"><strong>2 regions</strong><br><sub>Spain · Aragón</sub></td>
+  </tr>
+</table>
 
-**Status:** working end to end. Ingest (Portolan GeoParquet mirror of NASA FIRMS, no key), harmonization
-clipped to the official boundary, artifacts, static export, API and web client all run. Demo regions:
-`spain` (mainland and Balearic Islands) and `aragon`, whose factors borrow Spain's seasonal shape. The
-figures below were measured on the earlier Iberia box and are redrawn by `python -m pipeline.charts`.
+> **The short version:** Firetrack harmonizes hotspot activity, not fires or burned area. It makes a
+> 2005 observation comparable with a 2024 observation even though the satellite record changed.
+
+## Explore Firetrack
+
+The shortest way to understand Firetrack is to move from the experience to the evidence:
+
+1. **Open the [live demo](https://sebaspalate.github.io/firetrack/).** Choose Spain or Aragón and inspect
+   the calendar, map and monthly series.
+2. **Look for the camera effect.** Compare the raw sensor counts with the harmonized index around 2012
+   and 2024, when the available satellites changed.
+3. **Check the evidence.** Read [the proof](#the-proof), then open the method and validation artifacts
+   through the application or the [English write-up](docs/problem.md).
+
+## What is ready
+
+| Layer | What is included |
+|---|---|
+| Data | NASA FIRMS detections through the Portolan GeoParquet mirror; no API key required |
+| Science | Monthly Aqua-referenced calibration, boundary clipping and validation against withheld observations |
+| Product | Static Next.js demo, calendar, map, comparison series and native per-sensor CSV export |
+| Reproducibility | Committed artifacts, focused tests and commands to rebuild the demo regions |
+| Deployment | Public GitHub Pages demo built from `main` |
+
+Demo regions are `spain` (mainland and Balearic Islands) and `aragon`, whose factors borrow Spain's
+seasonal shape. The figures below were measured on the earlier Iberia box and are redrawn by
+`python -m pipeline.charts`.
 
 ---
 
@@ -142,7 +184,7 @@ We publish these, not hide them.
 
 The client ships no charting or map library: the calendar is a CSS grid, the series are inline SVG, and
 the hotspot map is inline SVG drawn on the same official boundary the detections were clipped to, so it
-works offline at a demo.
+works offline in the demo.
 
 - **The calendar** is a CSS grid: every cell is a month in the same units, with the count, the anomaly and
   the partial/provisional flag.
@@ -428,7 +470,7 @@ per-month median, so the running month can never set the baseline it is compared
 | Document | Language | Purpose |
 |---|---|---|
 | [`docs/problema.md`](docs/problema.md) | Spanish | canonical document: the problem in plain words, method, data, requirements, risks |
-| [`docs/problem.md`](docs/problem.md) | English | full mirror of the canonical document, for the judges and the submission |
+| [`docs/problem.md`](docs/problem.md) | English | full technical reference for the method, data and validation |
 
 ## Attribution
 
