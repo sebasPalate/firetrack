@@ -19,6 +19,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 import duckdb
+import pandas as pd
 
 from pipeline.firms import sql_literal
 from pipeline.harmonize import (
@@ -249,6 +250,25 @@ def test_the_last_observed_month_comes_from_the_sensor_days_table() -> None:
         try:
             assert last_observed_month(con, data_dir=root) == (2013, 7)
             assert last_observed_month(con, data_dir=root / "missing") is None
+        finally:
+            con.close()
+
+
+def test_the_last_observed_month_leaves_the_connection_usable() -> None:
+    """A half-consumed DuckDB result blocks the next ``register()`` on that connection.
+
+    ``last_observed_month`` runs in the same connection the writer later uses, so
+    it has to consume its result completely; ``fetchone()`` leaves it open and
+    ``write_artifacts`` then fails with ``ResourceInUseException``.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        _write_synthetic_cache(root)
+        con = duckdb.connect()
+        try:
+            assert last_observed_month(con, data_dir=root) == (2013, 7)
+            con.register("calendar_rows", pd.DataFrame({"year": [2013]}))
+            assert con.execute("select count(*) from calendar_rows").fetchall() == [(1,)]
         finally:
             con.close()
 

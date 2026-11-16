@@ -274,14 +274,18 @@ def last_observed_month(con, data_dir: Path | None = None) -> tuple[int, int] | 
 
     ``None`` when the table is missing or empty, so the caller can fall back to
     the region's own last month instead of failing.
+
+    The result is consumed with ``fetchall()``: ``fetchone()`` would leave the
+    DuckDB result open and the next ``register()`` on the same connection would
+    fail with ``ResourceInUseException``.
     """
     path = Path(data_dir or DATA) / "sensor_days.parquet"
     if not path.exists():
         return None
-    row = con.execute(f"SELECT max(acq_date) FROM read_parquet({sql_literal(path.as_posix())})").fetchone()
-    if not row or row[0] is None:
+    rows = con.execute(f"SELECT max(acq_date) FROM read_parquet({sql_literal(path.as_posix())})").fetchall()
+    if not rows or rows[0][0] is None:
         return None
-    return (row[0].year, row[0].month)
+    return (rows[0][0].year, rows[0][0].month)
 
 
 # ---------------------------------------------------------------- the calendar
