@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description:
     "Harmonized MODIS and VIIRS burning activity calendar: every month in the same units, so a new satellite is not mistaken for more fire.",
   icons: {
-    icon: "/icon.svg",
+    icon: "icon.svg",
   },
 };
 
