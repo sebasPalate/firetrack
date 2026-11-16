@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Firetrack</title>
+  <defs>
+    <linearGradient id="bg" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0b1b2d"/>
+      <stop offset="1" stop-color="#07111f"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="22" y1="16" x2="43" y2="49" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffd84d"/>
+      <stop offset=".52" stop-color="#ff9a3c"/>
+      <stop offset="1" stop-color="#ef5b32"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#bg)"/>
+  <path
+    d="M32 13c1.7 7.5-2.7 10.1-5.8 14.2-2.2 2.9-3.3 5.7-2.4 9.5 1 4.1 4.2 6.7 8.5 6.7 5.8 0 9.4-4.1 8.4-9.6-.7-3.7-3.1-6-5.8-8.6.1 4.1-1 6.1-2.7 7.4.3-5.6 3.2-10.6-.2-19.6Z"
+    fill="url(#flame)"
+  />
+  <path
+    d="M10 36.5c8.1-10.7 20.2-15.5 31-12.5 6.4 1.8 10.9 5.9 13 11.6"
+    fill="none"
+    stroke="#56d8ff"
+    stroke-linecap="round"
+    stroke-width="2.5"
+  />
+  <circle cx="10" cy="36.5" r="2.5" fill="#56d8ff"/>
+  <circle cx="54" cy="35.6" r="2.5" fill="#56d8ff"/>
+  <circle cx="44.5" cy="16.5" r="2" fill="#38d39f"/>
+  <circle cx="17.5" cy="48" r="2" fill="#38d39f"/>
+</svg>
