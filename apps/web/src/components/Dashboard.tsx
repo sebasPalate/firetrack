@@ -415,23 +415,34 @@ function RegionView({
     "rounded-lg border px-3 py-1.5 font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50";
 
   return (
-    <div className={`mx-auto max-w-[1400px] px-4 py-6 ${tour !== null ? "pb-72" : ""}`}>
+    <div className={`mx-auto max-w-[1400px] px-4 py-5 sm:px-6 sm:py-8 ${tour !== null ? "pb-72" : ""}`}>
       <header id="section-top" className="mb-6 scroll-mt-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-100">Firetrack</h1>
-            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-400">
-              One comparable fire record from NASA MODIS and VIIRS. Pick an area and a range, then read the calendar:
-              every cell is a month expressed in the same units, so 2005 and 2024 can finally be compared.
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-300/80">
+              Satellite hotspot harmonization · 2000 to today
+            </p>
+            <h1 className="text-3xl font-semibold tracking-tight text-slate-100 sm:text-4xl">Firetrack</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">
+              A comparable activity record from NASA MODIS and VIIRS. Pick an area and a range, then read every month
+              in the same Aqua-referenced units — so a satellite change does not look like a fire change.
+            </p>
+            <p className="mt-3 text-xs text-slate-500">
+              Harmonized index, not a fire count · transparent method · downloadable detections
             </p>
           </div>
-          <div className="flex flex-wrap items-end gap-2 text-xs">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3 shadow-lg shadow-slate-950/20">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="text-xs font-semibold text-slate-200">Explore the record</span>
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">Controls</span>
+            </div>
+            <div className="flex flex-wrap items-end gap-2 text-xs">
             <label className="flex flex-col gap-1">
               <span className="text-slate-500">Area</span>
               <select
                 value={regionId}
                 onChange={(event) => onRegion(event.target.value)}
-                className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-100"
+                className="min-w-32 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
               >
                 {regions.length === 0 ? <option value={regionId}>{regionId}</option> : null}
                 {regions.map((candidate) => (
@@ -452,7 +463,7 @@ function RegionView({
                     end: current?.end ?? Number(event.target.value),
                   }));
                 }}
-                className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-100"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
               >
                 {(payload?.years ?? []).map((year) => (
                   <option key={year} value={year}>
@@ -472,7 +483,7 @@ function RegionView({
                     end: Number(event.target.value),
                   }));
                 }}
-                className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-100"
+                className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
               >
                 {(payload?.years ?? []).map((year) => (
                   <option key={year} value={year}>
@@ -527,10 +538,11 @@ function RegionView({
                 Download CSV
               </a>
             )}
+            </div>
           </div>
         </div>
         {region ? (
-          <p className="mt-2 text-[11px] text-slate-500">
+          <p className="mt-4 inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-1 rounded-full border border-slate-800 bg-slate-900/50 px-3 py-1.5 text-[11px] text-slate-500">
             {region.geometry ? "clipped to the official boundary" : `bbox ${region.bbox.map((value) => value.toFixed(1)).join(", ")}`}
             {" · "}
             {region.why}
@@ -542,13 +554,18 @@ function RegionView({
       </header>
 
       {problem ? (
-        <div className="mb-4 rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-200">
+        <div role="alert" className="mb-4 rounded-2xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-200">
           <p className="font-semibold">The view cannot be built</p>
           <p className="mt-1 text-rose-300">{problem}</p>
         </div>
       ) : null}
 
-      {loading && !payload ? <p className="text-sm text-slate-500">Loading the harmonized artifacts…</p> : null}
+      {loading && !payload ? (
+        <div aria-live="polite" aria-label="Loading the harmonized artifacts" className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+          <div className="h-72 animate-pulse rounded-2xl border border-slate-800 bg-slate-900/60" />
+          <div className="h-72 animate-pulse rounded-2xl border border-slate-800 bg-slate-900/60" />
+        </div>
+      ) : null}
 
       {payload && method && years.length ? (
         <div className="space-y-4">
