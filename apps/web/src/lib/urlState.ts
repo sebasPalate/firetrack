@@ -7,6 +7,7 @@
  * scroll jump, and it works the same on a static export under a base path.
  */
 import { formatBox, parseBox, type Bbox } from "./aoi";
+import { formatRangeBound, parseRangeBound, type YearMonth } from "./range";
 
 export type Series = "raw" | "harmonized" | "compare";
 export type ViewMode = "index" | "anomaly";
@@ -15,8 +16,9 @@ export type UrlState = {
   region?: string;
   /** The custom area, when `region` is the custom one. Range checks happen where the data is. */
   aoi?: Bbox;
-  from?: number;
-  to?: number;
+  /** Range ends to the month; a bare year in an old link reads as the whole year. */
+  from?: YearMonth;
+  to?: YearMonth;
   year?: number;
   /** Zero-based month, like everywhere else in the client. */
   month?: number;
@@ -27,8 +29,8 @@ export type UrlState = {
 export type UrlSnapshot = {
   region: string;
   aoi?: Bbox;
-  from?: number;
-  to?: number;
+  from?: YearMonth;
+  to?: YearMonth;
   year?: number;
   month?: number;
   view: ViewMode;
@@ -68,8 +70,8 @@ export function parseUrlState(search: string): UrlState {
   return {
     region: region && REGION_ID.test(region) ? region : undefined,
     aoi: parseBox(params.get("aoi")) ?? undefined,
-    from: integer(params.get("from"), 1900, 2200),
-    to: integer(params.get("to"), 1900, 2200),
+    from: parseRangeBound(params.get("from"), "start"),
+    to: parseRangeBound(params.get("to"), "end"),
     year: integer(params.get("year"), 1900, 2200),
     month: month === undefined ? undefined : month - 1,
     view: view === "index" || view === "anomaly" ? view : undefined,
@@ -82,8 +84,8 @@ export function writeUrlState(state: UrlSnapshot): void {
   const params = new URLSearchParams();
   params.set("region", state.region);
   if (state.aoi) params.set("aoi", formatBox(state.aoi));
-  if (state.from !== undefined) params.set("from", String(state.from));
-  if (state.to !== undefined) params.set("to", String(state.to));
+  if (state.from !== undefined) params.set("from", formatRangeBound(state.from, "start"));
+  if (state.to !== undefined) params.set("to", formatRangeBound(state.to, "end"));
   if (state.year !== undefined && state.month !== undefined) {
     params.set("year", String(state.year));
     params.set("month", String(state.month + 1));

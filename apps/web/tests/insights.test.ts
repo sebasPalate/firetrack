@@ -118,3 +118,39 @@ test("calendar image: an SVG with one cell per observed month, labelled, title e
   assert.ok(svg.includes(">2020<") && svg.includes(">2021<") && !svg.includes(">2022<"));
   assert.ok(svg.includes("<title>Feb 2021: 30</title>"));
 });
+
+test("month range: the summary only reads the months inside the range", () => {
+  // January and February only: March, the busiest 2022 month, is out of range.
+  const within = (_year: number, month: number) => month <= 1;
+  const summary = summarize(payload(), [2020, 2021, 2022], within);
+  assert.deepEqual(summary.peakYear, { year: 2021, index: 42, vsMedianPct: 16.7 });
+  assert.deepEqual(summary.peakMonth, { month: 1, median: 25 });
+  assert.equal(summary.latest?.month, 1);
+  assert.equal(summary.latest?.year, 2022);
+  assert.equal(summary.rawDetections, 585);
+  assert.equal(summary.topMonths.length, 3);
+});
+
+test("month range: the table only holds the months inside the range", () => {
+  const within = (year: number, month: number) => year === 2021 && month >= 1;
+  const lines = calendarCsv(payload(), [2021], within).trimEnd().split("\n");
+  assert.deepEqual(
+    lines.slice(1).map((line) => line.split(",").slice(0, 2).join("-")),
+    ["2021-2", "2021-3"],
+  );
+});
+
+test("month range: the image keeps the whole years and fades the months outside the range", () => {
+  const within = (_year: number, month: number) => month === 1;
+  const svg = calendarSvg(payload(), [2020, 2021], {
+    title: "t",
+    subtitle: "s",
+    value: (index) => index,
+    color: () => "red",
+    legend: ["0", "1"],
+    inRange: within,
+  });
+  assert.equal((svg.match(/<rect class="cell"/g) ?? []).length, 6);
+  assert.equal((svg.match(/<rect class="cell"[^>]*opacity="0.2"/g) ?? []).length, 4);
+  assert.ok(svg.includes("(outside the range)"));
+});

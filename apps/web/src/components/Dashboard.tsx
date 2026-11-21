@@ -10,6 +10,7 @@ import { GuidedTour, type TourStep } from "@/components/GuidedTour";
 import { MapPanel } from "@/components/MapPanel";
 import { MonthlySeries } from "@/components/MonthlySeries";
 import { Provenance } from "@/components/Provenance";
+import { RangePicker } from "@/components/RangePicker";
 import { Seasonality } from "@/components/Seasonality";
 import { TimeControls } from "@/components/TimeControls";
 import { Validation } from "@/components/Validation";
@@ -30,6 +31,7 @@ import { diverging, sequential } from "@/lib/colors";
 import { saveBlob, saveText, slug, svgToPng } from "@/lib/download";
 import { MONTHS, formatIndex, formatPercent } from "@/lib/format";
 import { calendarCsv, calendarSvg, summarize } from "@/lib/insights";
+import { clampRange, inRange, isWholeYears, makeRange, rangeLabel, type MonthRange, type YearMonth } from "@/lib/range";
 import type { CalendarPayload, MethodPayload, Region } from "@/lib/types";
 import {
   parseUrlState,
@@ -170,7 +172,7 @@ function RegionView({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [range, setRange] = useState<{ start: number; end: number } | null>(null);
+  const [range, setRange] = useState<MonthRange | null>(null);
   const [download, setDownload] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [tour, setTour] = useState<number | null>(null);
@@ -193,12 +195,13 @@ function RegionView({
       : Promise.all([fetchCalendar(regionId, controller.signal), fetchMethod(regionId, controller.signal)]);
     load
       .then(([calendar, calibration]) => {
-        const first = calendar.years[0];
-        const last = calendar.years[calendar.years.length - 1];
         const wanted = opening.current;
-        let start = Math.min(Math.max(wanted.from ?? first, first), last);
-        let end = Math.min(Math.max(wanted.to ?? last, first), last);
-        if (start > end) [start, end] = [end, start];
+        const bounds = wholeRange(calendar);
+        const picked = clampRange(
+          makeRange(wanted.from ?? bounds.start, wanted.to ?? bounds.end),
+          bounds.start,
+          bounds.end,
+        );
 
         const column = wanted.year === undefined ? -1 : calendar.years.indexOf(wanted.year);
         const linked =
@@ -208,8 +211,8 @@ function RegionView({
 
         setPayload(calendar);
         setMethod(calibration);
-        setRange({ start, end });
-        setSelection(linked ?? latestUsable(calendar));
+        setRange(picked);
+        setSelection(linked ?? latestUsable(calendar, picked));
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
@@ -233,13 +236,13 @@ function RegionView({
   // Keep the address bar in step with what is on screen, so Copy link always copies this view.
   useEffect(() => {
     if (!payload || !range) return;
-    const first = payload.years[0];
-    const last = payload.years[payload.years.length - 1];
+    const bounds = wholeRange(payload);
+    const same = (a: YearMonth, b: YearMonth) => a.year === b.year && a.month === b.month;
     writeUrlState({
       region: regionId,
       aoi: aoi ?? undefined,
-      from: range.start !== first ? range.start : undefined,
-      to: range.end !== last ? range.end : undefined,
+      from: same(range.start, bounds.start) ? undefined : range.start,
+      to: same(range.end, bounds.end) ? undefined : range.end,
       year: selection?.year,
       month: selection?.month,
       view: mode,
@@ -258,14 +261,19 @@ function RegionView({
     return null;
   }
 
+  /** Every year the range touches: the calendar shows them whole, so a season keeps its context. */
   const years = useMemo(() => {
     if (!payload) return [];
-    const start = range?.start ?? payload.years[0];
-    const end = range?.end ?? payload.years[payload.years.length - 1];
-    const low = Math.min(start, end);
-    const high = Math.max(start, end);
+    const low = range?.start.year ?? payload.years[0];
+    const high = range?.end.year ?? payload.years[payload.years.length - 1];
     return payload.years.filter((year) => year >= low && year <= high);
   }, [payload, range]);
+
+  /** The one rule every number and download reads: is this month part of the answer? */
+  const within = useMemo(
+    () => (range ? (year: number, month: number) => inRange(year, month, range) : () => true),
+    [range],
+  );
 
   const scale = useMemo(() => {
     if (!payload || !years.length) return 1;
@@ -275,7 +283,7 @@ function RegionView({
         const column = payload.years.indexOf(year);
         for (let month = 0; month < 12; month += 1) {
           const value = payload.harmonized[month][column];
-          if (value !== null) values.push(value);
+          if (value !== null && within(year, month)) values.push(value);
         }
       });
       return Math.max(percentile(values, 0.95), 1);
@@ -285,11 +293,11 @@ function RegionView({
       const column = payload.years.indexOf(year);
       for (let month = 0; month < 12; month += 1) {
         const value = payload.anomaly_pct[month][column];
-        if (value !== null) anomalies.push(Math.abs(value));
+        if (value !== null && within(year, month)) anomalies.push(Math.abs(value));
       }
     });
     return Math.min(Math.max(percentile(anomalies, 0.95), 25), 250);
-  }, [payload, years, mode]);
+  }, [payload, years, mode, within]);
 
   /** Every observed month in the visible range, in time order: what Play and the arrows walk through. */
   const cells = useMemo(() => {
@@ -298,11 +306,11 @@ function RegionView({
     years.forEach((year) => {
       const column = payload.years.indexOf(year);
       for (let month = 0; month < 12; month += 1) {
-        if (payload.harmonized[month][column] !== null) list.push({ year, month });
+        if (payload.harmonized[month][column] !== null && within(year, month)) list.push({ year, month });
       }
     });
     return list;
-  }, [payload, years]);
+  }, [payload, years, within]);
 
   const position = selection
     ? cells.findIndex((cell) => cell.year === selection.year && cell.month === selection.month)
@@ -343,17 +351,20 @@ function RegionView({
 
   const column = payload && selection ? payload.years.indexOf(selection.year) : -1;
 
-  const summary = useMemo(() => (payload && years.length ? summarize(payload, years) : null), [payload, years]);
+  const summary = useMemo(
+    () => (payload && years.length ? summarize(payload, years, within) : null),
+    [payload, years, within],
+  );
 
   /** File names say what is inside: the area and the range. */
   function exportName(): string {
     const area = aoi ? `aoi ${formatBox(aoi)}` : regionId;
-    return `firetrack-${slug(area)}-${years[0]}-${years[years.length - 1]}`;
+    return `firetrack-${slug(area)}-${slug(range ? rangeLabel(range) : `${years[0]}-${years[years.length - 1]}`)}`;
   }
 
   function exportTable() {
     if (!payload) return;
-    saveText(calendarCsv(payload, years), `${exportName()}-calendar.csv`, "text/csv;charset=utf-8");
+    saveText(calendarCsv(payload, years, within), `${exportName()}-calendar.csv`, "text/csv;charset=utf-8");
   }
 
   function exportImage(format: "png" | "svg") {
@@ -361,7 +372,7 @@ function RegionView({
     const index = mode === "index";
     const last = years[years.length - 1];
     const svg = calendarSvg(payload, years, {
-      title: `${payload.region.name} · burning activity calendar ${years[0]}–${last}`,
+      title: `${payload.region.name} · burning activity calendar ${range ? rangeLabel(range) : `${years[0]}–${last}`}`,
       subtitle: index
         ? "Harmonized activity index in Aqua MODIS detections (not a fire count). Dashed outline: partial month."
         : "Anomaly against the multi-year median of the same calendar month. Dashed outline: partial month.",
@@ -375,6 +386,7 @@ function RegionView({
       legend: index ? ["0", formatIndex(scale)] : [`−${Math.round(scale)} %`, `+${Math.round(scale)} %`],
       ramp: index ? [0, 0.25, 0.5, 0.75, 1].map(sequential) : [-1, -0.5, 0, 0.5, 1].map(diverging),
       format: index ? formatIndex : formatPercent,
+      inRange: within,
     });
     const name = `${exportName()}-calendar-${mode}`;
     if (format === "svg") {
@@ -475,7 +487,7 @@ function RegionView({
     if (next === null || !payload) return;
     if (next === 0) {
       onSeries("raw");
-      setRange({ start: payload.years[0], end: payload.years[payload.years.length - 1] });
+      setRange(wholeRange(payload));
     } else if (next === 1) {
       onSeries("compare");
     } else if (next === 2) {
@@ -564,46 +576,17 @@ function RegionView({
                 Edit area
               </button>
             ) : null}
-            <label className="flex flex-col gap-1">
-              <span className="text-slate-500">From</span>
-              <select
-                value={range?.start ?? ""}
-                onChange={(event) => {
-                  setPlaying(false);
-                  setRange((current) => ({
-                    start: Number(event.target.value),
-                    end: current?.end ?? Number(event.target.value),
-                  }));
-                }}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
-              >
-                {(payload?.years ?? []).map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-slate-500">To</span>
-              <select
-                value={range?.end ?? ""}
-                onChange={(event) => {
-                  setPlaying(false);
-                  setRange((current) => ({
-                    start: current?.start ?? Number(event.target.value),
-                    end: Number(event.target.value),
-                  }));
-                }}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
-              >
-                {(payload?.years ?? []).map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <RangePicker
+              years={payload?.years ?? []}
+              range={range}
+              onRange={(next) => {
+                setPlaying(false);
+                setRange(next);
+                if (payload && (!selection || !inRange(selection.year, selection.month, next))) {
+                  setSelection(latestUsable(payload, next));
+                }
+              }}
+            />
             <button
               type="button"
               disabled={!payload}
@@ -621,13 +604,14 @@ function RegionView({
             >
               Copy link
             </button>
-            {STATIC_MODE || custom ? (
+            {STATIC_MODE || custom || (range !== null && !isWholeYears(range)) ? (
               <button
                 type="button"
                 disabled={download === "busy"}
                 onClick={() => {
+                  if (!range) return;
                   setDownload("busy");
-                  downloadDetections(regionId, years[0] ?? 2000, years[years.length - 1] ?? 2026, aoi ?? undefined)
+                  downloadDetections(regionId, range, aoi ?? undefined)
                     .then(({ rows, missing }) =>
                       setDownload(
                         `${rows.toLocaleString("en-US")} detections` +
@@ -702,7 +686,7 @@ function RegionView({
           {summary ? (
             <AtAGlance
               summary={summary}
-              range={[years[0], years[years.length - 1]]}
+              range={range ? rangeLabel(range) : `${years[0]}–${years[years.length - 1]}`}
               peakOfYear={(year) => busiestMonth(payload, year)}
               onSelect={(next) => {
                 pick(next);
@@ -787,6 +771,7 @@ function RegionView({
                 years={years}
                 selection={selection}
                 onSelect={pick}
+                inRange={within}
               />
             </div>
             {selection ? <DetailPanel payload={payload} selection={selection} /> : null}
@@ -818,6 +803,8 @@ function RegionView({
               <YearlyTotals
                 payload={payload}
                 years={years}
+                inRange={within}
+                rangeNote={range && !isWholeYears(range) ? rangeLabel(range) : null}
                 series={series}
                 onSeries={onSeries}
                 selectedYear={selection?.year ?? null}
@@ -846,7 +833,7 @@ function RegionView({
           ) : null}
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <MonthlySeries payload={payload} years={years} />
+            <MonthlySeries payload={payload} years={years} inRange={within} />
             <Validation method={method} />
           </div>
 
@@ -866,14 +853,26 @@ function RegionView({
 }
 
 /** The running year is a preview, so open on the last month that is actually complete. */
-function latestUsable(payload: CalendarPayload): Selection {
+function latestUsable(payload: CalendarPayload, range?: MonthRange): Selection {
   const lastColumn = payload.years.length - 1;
-  for (let month = 11; month >= 0; month -= 1) {
-    if (payload.harmonized[month][lastColumn] !== null && !payload.partial[month][lastColumn]) {
-      return { year: payload.years[lastColumn], month };
+  // Within a range, the newest complete month of the range: the map never shows a month the calendar hides.
+  for (let column = lastColumn; column >= 0; column -= 1) {
+    for (let month = 11; month >= 0; month -= 1) {
+      const year = payload.years[column];
+      if (range && !inRange(year, month, range)) continue;
+      if (payload.harmonized[month][column] !== null && !payload.partial[month][column]) return { year, month };
     }
+    if (!range) break;
   }
-  return { year: payload.years[lastColumn], month: 11 };
+  return range ? { ...range.end } : { year: payload.years[lastColumn], month: 11 };
+}
+
+/** The whole years the calendar covers: the default range, and what Reset means. */
+function wholeRange(payload: CalendarPayload): MonthRange {
+  return makeRange(
+    { year: payload.years[0], month: 0 },
+    { year: payload.years[payload.years.length - 1], month: 11 },
+  );
 }
 
 /** The busiest observed month of one year. */

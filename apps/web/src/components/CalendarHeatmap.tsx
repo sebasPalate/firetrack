@@ -15,11 +15,13 @@ type Props = {
   years: number[];
   selection: Selection | null;
   onSelect: (selection: Selection) => void;
+  /** Months outside the selected range stay visible but faded: they are context, not part of the answer. */
+  inRange?: (year: number, month: number) => boolean;
 };
 
 type Hover = { year: number; month: number; x: number; y: number };
 
-export function CalendarHeatmap({ payload, mode, scaleMax, years, selection, onSelect }: Props) {
+export function CalendarHeatmap({ payload, mode, scaleMax, years, selection, onSelect, inRange }: Props) {
   const grid = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<Hover | null>(null);
 
@@ -100,7 +102,8 @@ export function CalendarHeatmap({ payload, mode, scaleMax, years, selection, onS
         <div ref={grid} className="relative min-w-[720px]">
           <div
             className="grid items-center gap-[3px]"
-            style={{ gridTemplateColumns: `44px repeat(${columns.length}, minmax(14px, 1fr))` }}
+            // A cap on the column width keeps a short range as cells, not stretched bars.
+            style={{ gridTemplateColumns: `44px repeat(${columns.length}, minmax(14px, 56px))` }}
           >
             <span />
             {columns.map((column) => (
@@ -132,10 +135,12 @@ export function CalendarHeatmap({ payload, mode, scaleMax, years, selection, onS
                   const anomaly = payload.anomaly_pct[month][column];
                   const background = paint(column, month);
                   const isSelected = selection?.year === payload.years[column] && selection?.month === month;
+                  const outside = inRange ? !inRange(payload.years[column], month) : false;
                   const label =
-                    mode === "index"
+                    (mode === "index"
                       ? `${MONTHS[month]} ${payload.years[column]}: ${formatIndex(value)} index`
-                      : `${MONTHS[month]} ${payload.years[column]}: ${formatPercent(anomaly)} vs median`;
+                      : `${MONTHS[month]} ${payload.years[column]}: ${formatPercent(anomaly)} vs median`) +
+                    (outside ? ", outside the selected range" : "");
                   return (
                     <button
                       key={`c-${month}-${column}`}
@@ -154,7 +159,7 @@ export function CalendarHeatmap({ payload, mode, scaleMax, years, selection, onS
                       style={{ backgroundColor: background, color: textOn(background) }}
                       className={`relative h-6 w-full rounded-[3px] border text-[9px] leading-none tabular-nums transition-[box-shadow,transform] hover:z-10 hover:scale-[1.12] hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 ${
                         value === null ? "border-dashed border-slate-700" : "border-transparent"
-                      } ${isSelected ? "ring-2 ring-sky-300" : ""}`}
+                      } ${isSelected ? "ring-2 ring-sky-300" : ""} ${outside && !isSelected ? "opacity-20" : ""}`}
                     >
                       {payload.partial[month][column] ? (
                         <span

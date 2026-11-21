@@ -176,16 +176,31 @@ export function countInBox(years: Map<number, YearDetections>, box: Bbox): Month
   return counts;
 }
 
-/** The CSV header plus the rows inside the box, in their original text. */
-export function filterCsvToBox(csv: string, box: Bbox): { text: string; rows: number } {
+/**
+ * The CSV header plus the rows a rule keeps, in their original text. The rule
+ * reads fields by column name, so it never depends on the column order.
+ */
+export function filterCsv(
+  csv: string,
+  keep: (field: (name: string) => string) => boolean,
+): { text: string; rows: number } {
   const rows = lines(csv);
   if (!rows.length) return { text: "", rows: 0 };
-  const [latAt, lonAt] = columns(rows[0], ["latitude", "longitude"]);
+  const header = splitCsvLine(rows[0].replace(/\r$/, ""));
   const kept = rows.slice(1).filter((line) => {
     const fields = splitCsvLine(line.replace(/\r$/, ""));
-    return inBox(Number(fields[latAt]), Number(fields[lonAt]), box);
+    return keep((name) => {
+      const index = header.indexOf(name);
+      if (index < 0) throw new Error(`detections CSV has no "${name}" column`);
+      return fields[index] ?? "";
+    });
   });
   return { text: `${[rows[0], ...kept].join("\n")}\n`, rows: kept.length };
+}
+
+/** The CSV header plus the rows inside the box, in their original text. */
+export function filterCsvToBox(csv: string, box: Bbox): { text: string; rows: number } {
+  return filterCsv(csv, (field) => inBox(Number(field("latitude")), Number(field("longitude")), box));
 }
 
 /** Python's `round(x, digits)`: exact on the binary value, which `toFixed` also is. */

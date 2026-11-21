@@ -1,4 +1,5 @@
-import { AOI_SOURCE_REGION, filterCsvToBox, formatBox, type Bbox } from "./aoi";
+import { AOI_SOURCE_REGION, filterCsv, formatBox, inBox, type Bbox } from "./aoi";
+import { inRangeDate, isWholeYears, type MonthRange } from "./range";
 import type { CalendarPayload, MethodPayload, Region } from "./types";
 
 /**
@@ -94,19 +95,25 @@ export function boundaryUrl(region: string): string {
  * A year with no file is skipped and reported, never silently treated as empty.
  *
  * A custom `box` is cut from the Spain files in the browser, in either mode:
- * only the rows inside the box are kept.
+ * only the rows inside the box are kept. A `range` that does not cover whole
+ * years keeps only the rows of its months, also in the browser.
  */
 export async function downloadDetections(
   region: string,
-  startYear: number,
-  endYear: number,
+  range: MonthRange,
   box?: Bbox,
 ): Promise<{ rows: number; missing: number[] }> {
-  if (!STATIC_MODE && !box) {
+  const startYear = range.start.year;
+  const endYear = range.end.year;
+  const byMonth = !isWholeYears(range);
+  if (!STATIC_MODE && !box && !byMonth) {
     window.location.href = detectionsCsvUrl(region, startYear, endYear);
     return { rows: -1, missing: [] };
   }
   const source = box ? AOI_SOURCE_REGION : region;
+  const keep = (field: (name: string) => string) =>
+    (!box || inBox(Number(field("latitude")), Number(field("longitude")), box)) &&
+    (!byMonth || inRangeDate(field("acq_date"), range));
   let header = "";
   const parts: string[] = [];
   const missing: number[] = [];
@@ -118,7 +125,7 @@ export async function downloadDetections(
       continue;
     }
     const full = await response.text();
-    const text = (box ? filterCsvToBox(full, box).text : full).replace(/\r?\n$/, "");
+    const text = (box || byMonth ? filterCsv(full, keep).text : full).replace(/\r?\n$/, "");
     const newline = text.indexOf("\n");
     if (newline < 0) {
       header ||= text;
@@ -136,7 +143,11 @@ export async function downloadDetections(
   const link = document.createElement("a");
   link.href = url;
   const name = box ? `aoi_${formatBox(box).replaceAll(",", "_")}` : region;
-  link.download = `firetrack-${name}-${startYear}-01-01-${endYear}-12-31.csv`;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const lastDay = new Date(Date.UTC(endYear, range.end.month + 1, 0)).getUTCDate();
+  const from = `${startYear}-${pad(range.start.month + 1)}-01`;
+  const to = `${endYear}-${pad(range.end.month + 1)}-${pad(lastDay)}`;
+  link.download = `firetrack-${name}-${from}-${to}.csv`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   return { rows, missing };

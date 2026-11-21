@@ -10,7 +10,8 @@ type Props = {
   /** The busiest month of a year, so picking a year opens a month worth looking at. */
   peakOfYear: (year: number) => number;
   onSelect: (selection: Selection) => void;
-  range: [number, number];
+  /** The range in words: "2000–2026" or "Jun 2022 – Sep 2022". */
+  range: string;
 };
 
 const card =
@@ -34,7 +35,7 @@ export function AtAGlance({ summary, peakOfYear, onSelect, range }: Props) {
   return (
     <section aria-labelledby="glance-title" className="space-y-2">
       <h2 id="glance-title" className="text-sm font-semibold text-slate-200">
-        At a glance · {range[0]}–{range[1]}
+        At a glance · {range}
       </h2>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {latest ? (

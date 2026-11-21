@@ -9,6 +9,10 @@ import type { Series } from "@/lib/urlState";
 type Props = {
   payload: CalendarPayload;
   years: number[];
+  /** Only these months add up into a year's total. */
+  inRange?: (year: number, month: number) => boolean;
+  /** Set when the range is not whole years, so the totals say what they add up. */
+  rangeNote?: string | null;
   series: Series;
   onSeries: (series: Series) => void;
   selectedYear: number | null;
@@ -43,6 +47,8 @@ const SERIES_OPTIONS: { id: Series; label: string }[] = [
 export function YearlyTotals({
   payload,
   years,
+  inRange,
+  rangeNote,
   series,
   onSeries,
   selectedYear,
@@ -58,6 +64,7 @@ export function YearlyTotals({
     let harmonized = 0;
     let raw = 0;
     for (let month = 0; month < 12; month += 1) {
+      if (inRange && !inRange(year, month)) continue;
       harmonized += payload.harmonized[month][column] ?? 0;
       raw += payload.raw_count[month][column] ?? 0;
     }
@@ -85,7 +92,7 @@ export function YearlyTotals({
     <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-slate-200">
-          Yearly total, {years[0]}–{years[years.length - 1]}
+          {rangeNote ? <>Total per year, months in {rangeNote}</> : <>Yearly total, {years[0]}–{years[years.length - 1]}</>}
         </h2>
         <div role="group" aria-label="Series" className="flex rounded-lg border border-slate-700 p-0.5 text-xs">
           {SERIES_OPTIONS.map((option) => (

@@ -208,8 +208,12 @@ works offline in the demo.
   *Draw area* on the map and drag a rectangle. The calendar, map and CSV are computed in the browser from
   the Spain detections inside the box, with Spain's monthly factors and the pipeline's own calendar rules;
   a box around all of Spain reproduces `calendar/spain.json` exactly (`npm test`).
-- **The view is the URL** (`?region=aragon&year=2024&month=8&series=compare`, or
-  `?region=custom&aoi=-1,41,0,42` for a custom box), so any state can be shared as a link.
+- **The range is picked to the month** (From / To, each a month and a year), so a question like "June to
+  September 2022" has an answer. The calendar keeps the whole years and fades the months outside the range;
+  the summary, the yearly totals, the series and every download count only the months inside it.
+- **The view is the URL** (`?region=aragon&year=2024&month=8&series=compare`,
+  `?region=spain&from=2022-06&to=2022-09` for a season, or `?region=custom&aoi=-1,41,0,42` for a custom
+  box), so any state can be shared as a link. A bare year (`from=2010`) still means the whole year.
 - **The detections export** is the native per-sensor CSV behind whatever you are looking at.
 
 ## Who it is for

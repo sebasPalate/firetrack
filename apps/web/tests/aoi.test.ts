@@ -8,6 +8,7 @@ import {
   buildAoiCalendar,
   compactDetections,
   countInBox,
+  filterCsv,
   filterCsvToBox,
   formatBox,
   parseBox,
@@ -176,4 +177,11 @@ test("S3: counting uses the detection's own month and satellite, inside the box 
   assert.deepEqual(counts.get("2020-0"), [0, 1, 0, 0, 0]);
   assert.deepEqual(counts.get("2020-1"), [0, 0, 1, 0, 1]);
   assert.equal(counts.size, 2);
+});
+
+test("CSV filter: any rule on the named columns keeps the header and the matching rows", () => {
+  const csv = ["acq_date,note,latitude", "2022-06-01,a,40", '2022-05-31,"b, quoted",40', "2022-09-30,c,40", ""].join("\n");
+  const { text, rows } = filterCsv(csv, (field) => field("acq_date") >= "2022-06");
+  assert.equal(rows, 2);
+  assert.equal(text, "acq_date,note,latitude\n2022-06-01,a,40\n2022-09-30,c,40\n");
 });
