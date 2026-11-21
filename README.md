@@ -194,8 +194,12 @@ The client ships no charting or map library: the calendar is a CSS grid, the ser
 the hotspot map is inline SVG drawn on the same official boundary the detections were clipped to, so it
 works offline in the demo.
 
+- **At a glance**, above the calendar: the latest complete month against its usual level, the most active
+  year against the median year, the month the fire season peaks and the three busiest months. Each card
+  opens the month it names. The running year and partial months never set a baseline.
 - **The calendar** is a CSS grid: every cell is a month in the same units, with the count, the anomaly and
-  the partial/provisional flag.
+  the partial/provisional flag. *Download* gives the monthly table (index, raw detections, median, anomaly,
+  sensor, factor) as CSV, and the calendar as shown as a PNG or SVG image for a report or a slide.
 - **The series** are inline SVG, drawn from the artifacts, with error whiskers from the year the overlap
   starts.
 - **The map** puts every hotspot on the official boundary, so the box you picked and the fires you see are
@@ -206,7 +210,7 @@ works offline in the demo.
   a box around all of Spain reproduces `calendar/spain.json` exactly (`npm test`).
 - **The view is the URL** (`?region=aragon&year=2024&month=8&series=compare`, or
   `?region=custom&aoi=-1,41,0,42` for a custom box), so any state can be shared as a link.
-- **The export** is the native per-sensor CSV behind whatever you are looking at.
+- **The detections export** is the native per-sensor CSV behind whatever you are looking at.
 
 ## Who it is for
 

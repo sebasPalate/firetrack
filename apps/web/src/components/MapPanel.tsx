@@ -313,7 +313,7 @@ export function MapPanel({ region, year, month, partial, provisional, dataRegion
   );
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
       <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
         <header className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-200">Hotspots · {monthLabel}</h2>
