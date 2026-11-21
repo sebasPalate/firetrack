@@ -14,11 +14,12 @@ Branch: `feat/custom-aoi` (from `develop`) · Delivery: ask-on-risk · Test runn
 
 ## Tasks
 
-- [x] T1 (S3, S5) inline — pure `src/lib/aoi.ts`: box validation, CSV row filter, per-month counts, calendar builder; tests in `apps/web/tests`.
-- [ ] T2 (S1, S2, S4, S6) inline — UI: custom area in the Area select, lat/lon form, draw mode on the map, URL state, CSV export, limitation notice.
+- [x] T1 (S3, S5) inline, commit 1a8e977 — pure `src/lib/aoi.ts`: box validation, CSV row filter, per-month counts, calendar builder; tests in `apps/web/tests`.
+- [x] T2 (S1, S2, S4, S6) inline — UI: custom area in the Area select, lat/lon form, draw mode on the map, URL state, CSV export, limitation notice.
 
 ## Log
 
 - L1 (2026-11-21, user): "Se a cumplido el objetivo del proeycto en este repositorio? debemos mejorar la UI en una nueva rama?" → after the gap analysis: "Vamos con la AOI", scope "Dentro de España (Recommended)".
 - L2: Explorer mapped the algorithm. Published CSVs are already confidence-filtered, static-source-free and clipped to Spain, so a sub-area only needs a lat/lon filter. Aragón fits its own calibration (shrunk to Spain's shape); a custom box cannot, because sensor completeness is not published, hence S4. Route: inline (no parallel units, no context backstop).
 - L3: T1 GREEN. `npm test` (node --test) 6/6; the whole-Spain box reproduces `calendar/spain.json` cell by cell (harmonized, raw_count, partial, provisional, source, factor, observed_days, median_by_month, anomaly_pct). Mutation check (NOAA-20 factor without the tail factor) fails both S3 tests, then green after restore. CI web job now runs `npm test`.
+- L4: T2 done. Browser check (Edge headless via CDP on the static export): `?region=custom&aoi=-1,41,0,42` opens the custom area; the form refuses `10,40,12,41` with "The area must lie inside the Spain data (longitude -9.31 to 4.33, latitude 36 to 43.8)." and applies `-0.5,41.5,0.5,42.5`; dragging on the Spain map opens `aoi=-1.6278,39.9000,0.9589,41.4600` with 76 detections on the map; no console errors. Spain's coastline is drawn inside a custom box for context. Not checked in a browser: the CSV file itself (its filter is covered by the S5 unit test).

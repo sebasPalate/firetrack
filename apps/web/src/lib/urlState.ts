@@ -1,16 +1,20 @@
 /**
- * The link is the state. Region, year range, selected month, calendar scale and
+ * The link is the state. Region (or custom area), year range, selected month, calendar scale and
  * series live in the query string, so any view can be pasted into a chat or a
  * slide and open exactly as it was.
  *
  * It uses `history.replaceState` directly: no navigation, no re-render, no
  * scroll jump, and it works the same on a static export under a base path.
  */
+import { formatBox, parseBox, type Bbox } from "./aoi";
+
 export type Series = "raw" | "harmonized" | "compare";
 export type ViewMode = "index" | "anomaly";
 
 export type UrlState = {
   region?: string;
+  /** The custom area, when `region` is the custom one. Range checks happen where the data is. */
+  aoi?: Bbox;
   from?: number;
   to?: number;
   year?: number;
@@ -22,6 +26,7 @@ export type UrlState = {
 
 export type UrlSnapshot = {
   region: string;
+  aoi?: Bbox;
   from?: number;
   to?: number;
   year?: number;
@@ -62,6 +67,7 @@ export function parseUrlState(search: string): UrlState {
   const month = integer(params.get("month"), 1, 12);
   return {
     region: region && REGION_ID.test(region) ? region : undefined,
+    aoi: parseBox(params.get("aoi")) ?? undefined,
     from: integer(params.get("from"), 1900, 2200),
     to: integer(params.get("to"), 1900, 2200),
     year: integer(params.get("year"), 1900, 2200),
@@ -75,6 +81,7 @@ export function parseUrlState(search: string): UrlState {
 export function writeUrlState(state: UrlSnapshot): void {
   const params = new URLSearchParams();
   params.set("region", state.region);
+  if (state.aoi) params.set("aoi", formatBox(state.aoi));
   if (state.from !== undefined) params.set("from", String(state.from));
   if (state.to !== undefined) params.set("to", String(state.to));
   if (state.year !== undefined && state.month !== undefined) {

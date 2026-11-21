@@ -1,11 +1,13 @@
 # Firetrack web client
 
-Next.js 16 + Tailwind 4, presentation only. Every number is precomputed by the pipeline; this app never
-reads FIRMS, DuckDB or Parquet.
+Next.js 16 + Tailwind 4, presentation only. Every number is precomputed by the pipeline, except a custom
+area of interest, whose calendar is cut in the browser from the published Spain detections with the
+pipeline's own rules (`src/lib/aoi.ts`). This app never reads FIRMS, DuckDB or Parquet.
 
 ```powershell
 npm install
 npm run dev     # http://localhost:3000
+npm test        # node --test: the custom-area calendar reproduces calendar/spain.json
 npm run build
 ```
 
@@ -51,6 +53,9 @@ Both modes are built by `pipeline/payloads.py`, so they show the same numbers.
 |---|---|
 | `src/lib/types.ts` | the artifact contract, mirrored from `pipeline/payloads.py` and `pipeline/harmonize.py` |
 | `src/lib/api.ts` | static or API fetch, `ApiError`, CSV download in both modes |
+| `src/lib/aoi.ts` | custom area: box checks, CSV filter, the calendar rules ported from the pipeline |
+| `src/lib/aoiData.ts` | loads and caches the Spain detections a custom area is cut from |
+| `src/components/AreaForm.tsx` | the west/south/east/north form; the map's *Draw area* is the other way in |
 | `src/lib/colors.ts` | viridis and coolwarm ramps, both colourblind-safe |
 | `src/components/Dashboard.tsx` | region/range controls, loading and error states, layout |
 | `src/components/CalendarHeatmap.tsx` | the calendar: a CSS grid, one cell per month |
