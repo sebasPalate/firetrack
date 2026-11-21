@@ -666,7 +666,7 @@ function RegionView({
           />
         ) : null}
         {region ? (
-          <p className="mt-4 inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-1 rounded-full border border-slate-800 bg-slate-900/50 px-3 py-1.5 text-[11px] text-slate-500">
+          <p className="mt-4 inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-1 rounded-2xl border border-slate-800 bg-slate-900/50 px-3 py-1.5 text-[11px] text-slate-500">
             {region.geometry ? "clipped to the official boundary" : `bbox ${region.bbox.map((value) => value.toFixed(1)).join(", ")}`}
             {" · "}
             {region.why}
@@ -685,7 +685,7 @@ function RegionView({
       ) : null}
 
       {loading && !payload ? (
-        <div aria-live="polite" aria-label="Loading the harmonized artifacts" className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+        <div aria-live="polite" aria-label="Loading the harmonized artifacts" className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
           {custom && progress ? (
             <p role="status" className="text-xs text-slate-400 lg:col-span-2">
               Building the custom area from the Spain detections: {progress.done} of {progress.total} years read. The
@@ -710,7 +710,7 @@ function RegionView({
               }}
             />
           ) : null}
-          <div id="section-calendar" className="grid scroll-mt-4 gap-4 lg:grid-cols-[2fr_1fr]">
+          <div id="section-calendar" className="grid grid-cols-1 scroll-mt-4 gap-4 lg:grid-cols-[2fr_1fr]">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                 <div role="group" aria-label="Calendar scale" className="flex items-center gap-1">
@@ -813,7 +813,7 @@ function RegionView({
             ) : null}
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div id="section-yearly" className="scroll-mt-4">
               <YearlyTotals
                 payload={payload}
@@ -845,7 +845,7 @@ function RegionView({
             </p>
           ) : null}
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <MonthlySeries payload={payload} years={years} />
             <Validation method={method} />
           </div>
