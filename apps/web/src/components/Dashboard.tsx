@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore, useEffect, useMemo, useRef, useState } from "react";
 
+import { AreaForm } from "@/components/AreaForm";
 import { CalendarHeatmap } from "@/components/CalendarHeatmap";
 import { DetailPanel } from "@/components/DetailPanel";
 import { GuidedTour, type TourStep } from "@/components/GuidedTour";
@@ -22,6 +23,8 @@ import {
   fetchMethod,
   fetchRegions,
 } from "@/lib/api";
+import { AOI_SOURCE_REGION, CUSTOM_REGION_ID, clampBox, formatBox, validateBox, type Bbox } from "@/lib/aoi";
+import { loadCustomArea } from "@/lib/aoiData";
 import { MONTHS, formatPercent } from "@/lib/format";
 import type { CalendarPayload, MethodPayload, Region } from "@/lib/types";
 import {
@@ -70,10 +73,18 @@ export function Dashboard() {
   const [pickedMode, setPickedMode] = useState<ViewMode | null>(null);
   const [pickedSeries, setPickedSeries] = useState<Series | null>(null);
 
-  const requestedRegion = pickedRegion ?? opening?.region ?? DEFAULT_REGION;
+  const [pickedAoi, setPickedAoi] = useState<Bbox | null>(null);
+
+  const aoi = pickedAoi ?? opening?.aoi ?? null;
+  const wanted = pickedRegion ?? opening?.region ?? DEFAULT_REGION;
+  // A custom area needs its box; without one the link opens the default region.
+  const requestedRegion = wanted === CUSTOM_REGION_ID && !aoi ? DEFAULT_REGION : wanted;
+  const custom = requestedRegion === CUSTOM_REGION_ID;
   // A link to a region that is not exported falls back to one that is.
   const regionId =
-    regions.length && !regions.some((region) => region.id === requestedRegion) ? regions[0].id : requestedRegion;
+    !custom && regions.length && !regions.some((region) => region.id === requestedRegion)
+      ? regions[0].id
+      : requestedRegion;
   const mode = pickedMode ?? opening?.view ?? "index";
   const series = pickedSeries ?? opening?.series ?? "harmonized";
 
@@ -102,8 +113,13 @@ export function Dashboard() {
 
   return (
     <RegionView
-      key={regionId}
+      key={custom && aoi ? `${regionId}:${formatBox(aoi)}` : regionId}
       regionId={regionId}
+      aoi={custom ? aoi : null}
+      onAoi={(box) => {
+        setPickedAoi(box);
+        setPickedRegion(CUSTOM_REGION_ID);
+      }}
       regions={regions}
       regionsError={regionsError}
       initial={pickedRegion === null ? opening : {}}
@@ -121,6 +137,8 @@ export function Dashboard() {
 
 function RegionView({
   regionId,
+  aoi,
+  onAoi,
   regions,
   regionsError,
   initial,
@@ -131,6 +149,9 @@ function RegionView({
   onRegion,
 }: {
   regionId: string;
+  /** Set only for the custom area. */
+  aoi: Bbox | null;
+  onAoi: (box: Bbox) => void;
   regions: Region[];
   regionsError: string | null;
   initial: UrlState;
@@ -150,13 +171,23 @@ function RegionView({
   const [playing, setPlaying] = useState(false);
   const [tour, setTour] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [aoiForm, setAoiForm] = useState(false);
 
   // The link the page opened with applies to the first load only.
   const opening = useRef(initial);
+  const custom = aoi !== null;
+  /** Every custom box is cut from the source region's data, so it must lie inside its box. */
+  const aoiLimits = regions.find((candidate) => candidate.id === AOI_SOURCE_REGION)?.bbox ?? null;
 
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([fetchCalendar(regionId, controller.signal), fetchMethod(regionId, controller.signal)])
+    const load: Promise<[CalendarPayload, MethodPayload]> = aoi
+      ? loadCustomArea(aoi, (done, total) => setProgress({ done, total }), controller.signal).then(
+          ({ calendar, method }) => [calendar, method],
+        )
+      : Promise.all([fetchCalendar(regionId, controller.signal), fetchMethod(regionId, controller.signal)]);
+    load
       .then(([calendar, calibration]) => {
         const first = calendar.years[0];
         const last = calendar.years[calendar.years.length - 1];
@@ -191,6 +222,8 @@ function RegionView({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
+    // The view remounts for every new box (its key), so the box never changes under one load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regionId]);
 
   // Keep the address bar in step with what is on screen, so Copy link always copies this view.
@@ -200,6 +233,7 @@ function RegionView({
     const last = payload.years[payload.years.length - 1];
     writeUrlState({
       region: regionId,
+      aoi: aoi ?? undefined,
       from: range.start !== first ? range.start : undefined,
       to: range.end !== last ? range.end : undefined,
       year: selection?.year,
@@ -207,7 +241,18 @@ function RegionView({
       view: mode,
       series,
     });
-  }, [payload, range, selection, regionId, mode, series]);
+  }, [payload, range, selection, regionId, aoi, mode, series]);
+
+  /** A box from the form or the map: rounded for a stable link, kept inside the data, then checked. */
+  function applyArea(box: Bbox, drawn: boolean): string | null {
+    const rounded = box.map((value) => Number(value.toFixed(4))) as Bbox;
+    const candidate = drawn && aoiLimits ? clampBox(rounded, aoiLimits) : rounded;
+    const problem = aoiLimits ? validateBox(candidate, aoiLimits) : null;
+    if (problem) return problem;
+    setAoiForm(false);
+    onAoi(candidate);
+    return null;
+  }
 
   const years = useMemo(() => {
     if (!payload) return [];
@@ -409,7 +454,7 @@ function RegionView({
     window.setTimeout(() => setNotice(null), 2500);
   }
 
-  const region = regions.find((candidate) => candidate.id === regionId);
+  const region = custom ? payload?.region : regions.find((candidate) => candidate.id === regionId);
   const problem = error ?? regionsError;
   const actionButton =
     "rounded-lg border px-3 py-1.5 font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 disabled:opacity-50";
@@ -440,18 +485,35 @@ function RegionView({
             <label className="flex flex-col gap-1">
               <span className="text-slate-500">Area</span>
               <select
-                value={regionId}
-                onChange={(event) => onRegion(event.target.value)}
+                value={aoiForm ? CUSTOM_REGION_ID : regionId}
+                onChange={(event) => {
+                  if (event.target.value === CUSTOM_REGION_ID) {
+                    setAoiForm(true);
+                    return;
+                  }
+                  setAoiForm(false);
+                  onRegion(event.target.value);
+                }}
                 className="min-w-32 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-slate-100"
               >
-                {regions.length === 0 ? <option value={regionId}>{regionId}</option> : null}
+                {regions.length === 0 && !custom ? <option value={regionId}>{regionId}</option> : null}
                 {regions.map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
                     {candidate.name}
                   </option>
                 ))}
+                <option value={CUSTOM_REGION_ID}>Custom area (lat/lon box)</option>
               </select>
             </label>
+            {custom && !aoiForm ? (
+              <button
+                type="button"
+                onClick={() => setAoiForm(true)}
+                className={`${actionButton} border-slate-600 text-slate-200 hover:bg-slate-800`}
+              >
+                Edit area
+              </button>
+            ) : null}
             <label className="flex flex-col gap-1">
               <span className="text-slate-500">From</span>
               <select
@@ -509,13 +571,13 @@ function RegionView({
             >
               Copy link
             </button>
-            {STATIC_MODE ? (
+            {STATIC_MODE || custom ? (
               <button
                 type="button"
                 disabled={download === "busy"}
                 onClick={() => {
                   setDownload("busy");
-                  downloadDetections(regionId, years[0] ?? 2000, years[years.length - 1] ?? 2026)
+                  downloadDetections(regionId, years[0] ?? 2000, years[years.length - 1] ?? 2026, aoi ?? undefined)
                     .then(({ rows, missing }) =>
                       setDownload(
                         `${rows.toLocaleString("en-US")} detections` +
@@ -524,7 +586,11 @@ function RegionView({
                     )
                     .catch((cause: unknown) => setDownload(cause instanceof Error ? cause.message : "download failed"));
                 }}
-                title="Every detection in the selected range inside the region boundary, with its sensor, confidence and FRP."
+                title={
+                  custom
+                    ? "Every detection in the selected range inside the custom box, with its sensor, confidence and FRP."
+                    : "Every detection in the selected range inside the region boundary, with its sensor, confidence and FRP."
+                }
                 className={`${actionButton} border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20`}
               >
                 {download === "busy" ? "Preparing CSV…" : "Download CSV"}
@@ -541,6 +607,14 @@ function RegionView({
             </div>
           </div>
         </div>
+        {aoiForm ? (
+          <AreaForm
+            initial={aoi ?? payload?.region.bbox ?? aoiLimits ?? [-1.5, 40.5, 0.5, 42]}
+            limits={aoiLimits}
+            onApply={(box) => applyArea(box, false)}
+            onCancel={() => setAoiForm(false)}
+          />
+        ) : null}
         {region ? (
           <p className="mt-4 inline-flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-1 rounded-full border border-slate-800 bg-slate-900/50 px-3 py-1.5 text-[11px] text-slate-500">
             {region.geometry ? "clipped to the official boundary" : `bbox ${region.bbox.map((value) => value.toFixed(1)).join(", ")}`}
@@ -562,6 +636,12 @@ function RegionView({
 
       {loading && !payload ? (
         <div aria-live="polite" aria-label="Loading the harmonized artifacts" className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+          {custom && progress ? (
+            <p role="status" className="text-xs text-slate-400 lg:col-span-2">
+              Building the custom area from the Spain detections: {progress.done} of {progress.total} years read. The
+              first area takes a moment; the next ones reuse the data.
+            </p>
+          ) : null}
           <div className="h-72 animate-pulse rounded-2xl border border-slate-800 bg-slate-900/60" />
           <div className="h-72 animate-pulse rounded-2xl border border-slate-800 bg-slate-900/60" />
         </div>
@@ -632,6 +712,15 @@ function RegionView({
                 month={selection.month}
                 partial={payload.partial[selection.month][column]}
                 provisional={payload.provisional[selection.month][column]}
+                dataRegion={custom ? AOI_SOURCE_REGION : undefined}
+                clip={aoi}
+                onDrawArea={(box) => {
+                  const problem = applyArea(box, true);
+                  if (problem) {
+                    setNotice(problem);
+                    window.setTimeout(() => setNotice(null), 4000);
+                  }
+                }}
               />
             ) : null}
           </div>
@@ -656,6 +745,17 @@ function RegionView({
               onPickMonth={(month) => pick({ year: selection?.year ?? years[years.length - 1], month })}
             />
           </div>
+
+          {custom ? (
+            <p
+              role="note"
+              className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs leading-relaxed text-amber-200"
+            >
+              <strong className="font-semibold">Custom area:</strong> the calibration and validation below are Spain&apos;s.
+              This box borrows Spain&apos;s monthly factors as they are and is not validated on its own; small areas
+              with few detections are noisy.
+            </p>
+          ) : null}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <MonthlySeries payload={payload} years={years} />

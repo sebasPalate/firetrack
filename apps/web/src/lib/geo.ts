@@ -7,6 +7,8 @@ export type Projection = {
   width: number;
   height: number;
   project: (lon: number, lat: number) => [number, number];
+  /** Map coordinates back to longitude and latitude: what a drawn rectangle needs. */
+  unproject: (x: number, y: number) => [number, number];
 };
 
 /**
@@ -22,6 +24,7 @@ export function makeProjection(bbox: [number, number, number, number]): Projecti
     width: MAP_WIDTH,
     height: (north - south) * scale,
     project: (lon, lat) => [(lon - west) * k * scale, (north - lat) * scale],
+    unproject: (x, y) => [west + x / (k * scale), north - y / scale],
   };
 }
 

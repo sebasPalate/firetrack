@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DayBars } from "@/components/DayBars";
 import {
@@ -17,6 +17,7 @@ import {
   type Point,
 } from "@/components/mapShared";
 import { StrongestDetections } from "@/components/StrongestDetections";
+import { inBox, type Bbox } from "@/lib/aoi";
 import { useMapView } from "@/components/useMapView";
 import {
   DetectionsError,
@@ -37,6 +38,12 @@ type Props = {
   month: number;
   partial: boolean;
   provisional: boolean;
+  /** Published region whose detection files feed this map; a custom area reads Spain's. */
+  dataRegion?: string;
+  /** Keep only the detections inside this box (a custom area). */
+  clip?: Bbox | null;
+  /** Turns on "Draw area": called with the rectangle the person dragged, in lon/lat. */
+  onDrawArea?: (box: Bbox) => void;
 };
 
 type Hover = { id: number; left: number; top: number };
@@ -53,7 +60,8 @@ type Hover = { id: number; left: number; top: number };
  * `useMapView`, the per-day bars in `DayBars`, the ranking in
  * `StrongestDetections`, and the shared pieces in `mapShared`.
  */
-export function MapPanel({ region, year, month, partial, provisional }: Props) {
+export function MapPanel({ region, year, month, partial, provisional, dataRegion, clip, onDrawArea }: Props) {
+  const source = dataRegion ?? region.id;
   const projection = useMemo(() => makeProjection(region.bbox), [region.bbox]);
   const width = projection.width;
   const height = projection.height;
@@ -87,22 +95,28 @@ export function MapPanel({ region, year, month, partial, provisional }: Props) {
   const setHover = (value: Hover | null) => setMarksNow({ hover: value });
   const setFocusId = (value: number | null) => setMarksNow({ focus: value });
 
-  const requestKey = `${region.id}:${year}`;
+  const requestKey = `${source}:${year}`;
   const request = loaded && loaded.key === requestKey ? loaded : null;
   const status: "loading" | "ready" | "error" =
     request === null ? "loading" : request.error === null ? "ready" : "error";
   const problem = request?.error ?? null;
-  const outline = outlineState && outlineState.key === region.id ? outlineState.path : null;
+  // A custom box has no boundary of its own: it shows the source region's, cut by the box.
+  const boundaryId = region.geometry ? region.id : source !== region.id ? source : null;
+  const outline = outlineState && outlineState.key === boundaryId ? outlineState.path : null;
+
+  const [drawing, setDrawing] = useState(false);
+  const [sketch, setSketch] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const sketchStart = useRef<{ x: number; y: number } | null>(null);
 
   // One request per year, cached; the year after is prefetched so playback has no gap at New Year.
   useEffect(() => {
     let alive = true;
-    const key = `${region.id}:${year}`;
-    loadDetections(region.id, year)
+    const key = `${source}:${year}`;
+    loadDetections(source, year)
       .then((rows) => {
         if (!alive) return;
         setLoaded({ key, rows, error: null });
-        loadDetections(region.id, year + 1).catch(() => undefined);
+        loadDetections(source, year + 1).catch(() => undefined);
       })
       .catch((cause: unknown) => {
         if (!alive) return;
@@ -118,25 +132,30 @@ export function MapPanel({ region, year, month, partial, provisional }: Props) {
     return () => {
       alive = false;
     };
-  }, [region.id, year]);
+  }, [source, year]);
 
   useEffect(() => {
+    if (!boundaryId) return;
     let alive = true;
-    loadBoundary(region.id)
+    loadBoundary(boundaryId)
       .then((geojson) => {
-        if (alive) setOutlineState({ key: region.id, path: geoJsonToPath(geojson, projection.project) });
+        if (alive) setOutlineState({ key: boundaryId, path: geoJsonToPath(geojson, projection.project) });
       })
       .catch(() => {
-        if (alive) setOutlineState({ key: region.id, path: null });
+        if (alive) setOutlineState({ key: boundaryId, path: null });
       });
     return () => {
       alive = false;
     };
-  }, [region.id, projection]);
+  }, [boundaryId, projection]);
 
   const monthRows = useMemo(
-    () => (request ? rowsInMonth(request.rows, year, month) : []),
-    [request, year, month],
+    () => {
+      if (!request) return [];
+      const rows = rowsInMonth(request.rows, year, month);
+      return clip ? rows.filter((row) => inBox(row.lat, row.lon, clip)) : rows;
+    },
+    [request, year, month, clip],
   );
 
   const points = useMemo<Point[]>(() => {
@@ -229,6 +248,15 @@ export function MapPanel({ region, year, month, partial, provisional }: Props) {
   }
 
   function onPointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    if (drawing) {
+      const at = map.toMap(event.clientX, event.clientY);
+      if (!at || event.button !== 0) return;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      sketchStart.current = at;
+      setSketch({ x0: at.x, y0: at.y, x1: at.x, y1: at.y });
+      setHover(null);
+      return;
+    }
     // A tap on a touch screen is the only way to inspect a mark there.
     if (event.pointerType === "touch") inspect(event);
     if (view.k <= 1 || event.button !== 0) return;
@@ -237,11 +265,40 @@ export function MapPanel({ region, year, month, partial, provisional }: Props) {
   }
 
   function onPointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    if (drawing) {
+      const start = sketchStart.current;
+      const at = start ? map.toMap(event.clientX, event.clientY) : null;
+      if (start && at) setSketch({ x0: start.x, y0: start.y, x1: at.x, y1: at.y });
+      return;
+    }
     if (map.pan(event.clientX, event.clientY)) {
       setHover(null);
       return;
     }
     if (event.pointerType !== "touch") inspect(event);
+  }
+
+  function onPointerUp() {
+    if (!drawing) {
+      map.endDrag();
+      return;
+    }
+    const drawn = sketch;
+    sketchStart.current = null;
+    setSketch(null);
+    // A click without a drag is not an area.
+    if (!drawn || !onDrawArea) return;
+    if (Math.abs(drawn.x1 - drawn.x0) * scale < 6 || Math.abs(drawn.y1 - drawn.y0) * scale < 6) return;
+    const [west, north] = projection.unproject(Math.min(drawn.x0, drawn.x1), Math.min(drawn.y0, drawn.y1));
+    const [east, south] = projection.unproject(Math.max(drawn.x0, drawn.x1), Math.max(drawn.y0, drawn.y1));
+    setDrawing(false);
+    onDrawArea([west, south, east, north]);
+  }
+
+  function cancelSketch() {
+    sketchStart.current = null;
+    setSketch(null);
+    map.endDrag();
   }
 
   const monthLabel = `${MONTHS[month]} ${year}`;
@@ -279,11 +336,14 @@ export function MapPanel({ region, year, month, partial, provisional }: Props) {
             role="img"
             aria-label={`Map of ${formatCount(visible.length)} detections in ${monthLabel}`}
             className="h-full w-full select-none"
-            style={{ touchAction: view.k > 1 ? "none" : "pan-y", cursor: dragging ? "grabbing" : view.k > 1 ? "grab" : "default" }}
+            style={{
+              touchAction: drawing || view.k > 1 ? "none" : "pan-y",
+              cursor: drawing ? "crosshair" : dragging ? "grabbing" : view.k > 1 ? "grab" : "default",
+            }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
-            onPointerUp={map.endDrag}
-            onPointerCancel={map.endDrag}
+            onPointerUp={onPointerUp}
+            onPointerCancel={cancelSketch}
             onPointerLeave={() => setHover(null)}
           >
             {outline ? (
@@ -294,6 +354,20 @@ export function MapPanel({ region, year, month, partial, provisional }: Props) {
                 strokeWidth={1}
                 vectorEffect="non-scaling-stroke"
                 fillRule="evenodd"
+              />
+            ) : null}
+            {clip ? (
+              <rect
+                x={0}
+                y={0}
+                width={width}
+                height={height}
+                fill="none"
+                stroke="#38bdf8"
+                strokeOpacity={0.6}
+                strokeWidth={2}
+                strokeDasharray="6 4"
+                vectorEffect="non-scaling-stroke"
               />
             ) : null}
             <g style={{ opacity: loading ? 0.35 : 1, transition: "opacity 150ms" }}>{layer}</g>
@@ -307,7 +381,45 @@ export function MapPanel({ region, year, month, partial, provisional }: Props) {
                 strokeWidth={2 * unit}
               />
             ) : null}
+            {sketch ? (
+              <rect
+                x={Math.min(sketch.x0, sketch.x1)}
+                y={Math.min(sketch.y0, sketch.y1)}
+                width={Math.abs(sketch.x1 - sketch.x0)}
+                height={Math.abs(sketch.y1 - sketch.y0)}
+                fill="rgba(56,189,248,0.12)"
+                stroke="#38bdf8"
+                strokeWidth={2 * unit}
+                strokeDasharray={`${6 * unit} ${4 * unit}`}
+              />
+            ) : null}
           </svg>
+
+          {onDrawArea ? (
+            <button
+              type="button"
+              aria-pressed={drawing}
+              onClick={() => {
+                cancelSketch();
+                setDrawing((current) => !current);
+              }}
+              className={`absolute left-2 top-2 rounded-md border px-2 py-1 text-[11px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 ${
+                drawing
+                  ? "border-sky-400 bg-sky-500/20 text-sky-200"
+                  : "border-slate-700 bg-slate-950/85 text-slate-200 hover:bg-slate-800"
+              }`}
+            >
+              {drawing ? "Cancel drawing" : "Draw area"}
+            </button>
+          ) : null}
+          {drawing && !sketch ? (
+            <p
+              role="status"
+              className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-md bg-slate-950/90 px-2 py-1 text-[11px] text-sky-200"
+            >
+              Drag a rectangle to define the area of interest
+            </p>
+          ) : null}
 
           <div className="absolute right-2 top-2 flex flex-col gap-1">
             <MapButton label="Zoom in" onClick={() => map.zoomBy(1.6)}>
@@ -327,7 +439,7 @@ export function MapPanel({ region, year, month, partial, provisional }: Props) {
             <span className="text-slate-500">· size = fire radiative power</span>
           </div>
 
-          {loading || problem || emptyAll || emptyFiltered ? (
+          {!drawing && (loading || problem || emptyAll || emptyFiltered) ? (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center">
               <p
                 role={problem ? "alert" : "status"}
@@ -364,6 +476,7 @@ export function MapPanel({ region, year, month, partial, provisional }: Props) {
 
         <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
           Each mark is one satellite pixel, not one fire. Drag to pan once zoomed, use + / − or Ctrl/⌘ + scroll to zoom.
+          {onDrawArea ? " Draw area turns a dragged rectangle into a custom area of interest." : ""}
           {provisional ? (
             <span className="text-amber-300"> Running year: near-real-time rows still mixed in.</span>
           ) : null}

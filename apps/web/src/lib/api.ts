@@ -1,3 +1,4 @@
+import { AOI_SOURCE_REGION, filterCsvToBox, formatBox, type Bbox } from "./aoi";
 import type { CalendarPayload, MethodPayload, Region } from "./types";
 
 /**
@@ -91,28 +92,33 @@ export function boundaryUrl(region: string): string {
  * Static mode: the detections are one CSV per year, so the range is stitched in
  * the browser (one header, then every year in order) and saved as one file.
  * A year with no file is skipped and reported, never silently treated as empty.
+ *
+ * A custom `box` is cut from the Spain files in the browser, in either mode:
+ * only the rows inside the box are kept.
  */
 export async function downloadDetections(
   region: string,
   startYear: number,
   endYear: number,
+  box?: Bbox,
 ): Promise<{ rows: number; missing: number[] }> {
-  if (!STATIC_MODE) {
+  if (!STATIC_MODE && !box) {
     window.location.href = detectionsCsvUrl(region, startYear, endYear);
     return { rows: -1, missing: [] };
   }
-  const id = encodeURIComponent(region);
+  const source = box ? AOI_SOURCE_REGION : region;
   let header = "";
   const parts: string[] = [];
   const missing: number[] = [];
   let rows = 0;
   for (let year = startYear; year <= endYear; year += 1) {
-    const response = await fetch(`${STATIC_BASE}/detections/${id}/${year}.csv`, { cache: "no-store" });
+    const response = await fetch(detectionsYearUrl(source, year), { cache: "no-store" });
     if (!response.ok) {
       missing.push(year);
       continue;
     }
-    const text = (await response.text()).replace(/\r?\n$/, "");
+    const full = await response.text();
+    const text = (box ? filterCsvToBox(full, box).text : full).replace(/\r?\n$/, "");
     const newline = text.indexOf("\n");
     if (newline < 0) {
       header ||= text;
@@ -129,7 +135,8 @@ export async function downloadDetections(
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `firetrack-${region}-${startYear}-01-01-${endYear}-12-31.csv`;
+  const name = box ? `aoi_${formatBox(box).replaceAll(",", "_")}` : region;
+  link.download = `firetrack-${name}-${startYear}-01-01-${endYear}-12-31.csv`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   return { rows, missing };

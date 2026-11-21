@@ -176,6 +176,9 @@ We publish these, not hide them.
   away.
 - **Two regions, one borrowed shape.** Aragón has about 40 to 60 vegetation detections a year, so its
   seasonal factors shrink towards Spain's instead of claiming a shape of its own.
+- **A custom area is not validated on its own.** It borrows Spain's factors as they are, because the
+  per-sensor coverage a box would need to fit its own calibration is not published. It works only inside
+  the Spain data, and a small box with few detections is noisy.
 - **Boundaries are a choice.** The Canary Islands are excluded (a different fire regime 1,000 km away, and
   the 2021 La Palma eruption adds about 31,000 detections that FIRMS types as vegetation). Ceuta and
   Melilla are excluded too.
@@ -197,8 +200,12 @@ works offline in the demo.
   starts.
 - **The map** puts every hotspot on the official boundary, so the box you picked and the fires you see are
   the same place.
-- **The view is the URL** (`?region=aragon&year=2024&month=8&series=compare`), so any state can be shared
-  as a link.
+- **A custom area of interest**: pick *Custom area* and type a west/south/east/north box, or press
+  *Draw area* on the map and drag a rectangle. The calendar, map and CSV are computed in the browser from
+  the Spain detections inside the box, with Spain's monthly factors and the pipeline's own calendar rules;
+  a box around all of Spain reproduces `calendar/spain.json` exactly (`npm test`).
+- **The view is the URL** (`?region=aragon&year=2024&month=8&series=compare`, or
+  `?region=custom&aoi=-1,41,0,42` for a custom box), so any state can be shared as a link.
 - **The export** is the native per-sensor CSV behind whatever you are looking at.
 
 ## Who it is for
@@ -384,6 +391,7 @@ when Suomi-NPP joins. The harmonizer prints the factor table and the validation 
 | `python -m pipeline.charts` | redraw `docs/img/salto_2012.svg` and `factor_por_mes.svg` from the artifacts |
 | `cd services\api; uvicorn main:app --reload` | API on <http://localhost:8000/docs> |
 | `cd apps\web; npm install; npm run dev` | client on <http://localhost:3000>; reads `public/data/` (static), or the API when `NEXT_PUBLIC_API_BASE` is set |
+| `cd apps\web; npm test` | web tests: the custom-area calendar against the pipeline's Spain calendar |
 | `cd apps\web; npm run build` | production build; the page is static, the data is fetched in the browser |
 
 </details>
