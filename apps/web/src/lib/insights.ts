@@ -49,21 +49,25 @@ function round(value: number, digits: number): number {
 
 type CellRef = { year: number; month: number; column: number };
 
+/** Which months of the shown years count: a month range trims the first and last year. */
+export type InRange = (year: number, month: number) => boolean;
+const everyMonth: InRange = () => true;
+
 /** Observed months of the range in time order. */
-function cellsIn(payload: CalendarPayload, years: number[]): CellRef[] {
+function cellsIn(payload: CalendarPayload, years: number[], inRange: InRange): CellRef[] {
   const cells: CellRef[] = [];
   for (const year of years) {
     const column = payload.years.indexOf(year);
     if (column < 0) continue;
     for (let month = 0; month < 12; month += 1) {
-      if (payload.harmonized[month][column] !== null) cells.push({ year, month, column });
+      if (payload.harmonized[month][column] !== null && inRange(year, month)) cells.push({ year, month, column });
     }
   }
   return cells;
 }
 
-export function summarize(payload: CalendarPayload, years: number[]): Summary {
-  const cells = cellsIn(payload, years);
+export function summarize(payload: CalendarPayload, years: number[], inRange: InRange = everyMonth): Summary {
+  const cells = cellsIn(payload, years, inRange);
   const value = (cell: CellRef) => payload.harmonized[cell.month][cell.column] as number;
   const partial = (cell: CellRef) => Boolean(payload.partial[cell.month][cell.column]);
   const provisional = (cell: CellRef) => Boolean(payload.provisional[cell.month][cell.column]);
@@ -140,8 +144,8 @@ function csvField(value: string | number | boolean | null | undefined): string {
 }
 
 /** The monthly analysis behind the calendar: one row per observed month of the range. */
-export function calendarCsv(payload: CalendarPayload, years: number[]): string {
-  const rows = cellsIn(payload, years).map(({ year, month, column }) =>
+export function calendarCsv(payload: CalendarPayload, years: number[], inRange: InRange = everyMonth): string {
+  const rows = cellsIn(payload, years, inRange).map(({ year, month, column }) =>
     [
       year,
       month + 1,
@@ -177,6 +181,8 @@ export type CalendarImageOptions = {
   /** Colours along the bar, low to high. */
   ramp?: string[];
   format?: (value: number) => string;
+  /** Months outside the selected range are drawn faded, so the season keeps its context. */
+  inRange?: InRange;
 };
 
 const CELL = 22;
@@ -187,6 +193,7 @@ const TOP = 64;
 /** The calendar as a standalone SVG: white background, so it drops into a report or a slide. */
 export function calendarSvg(payload: CalendarPayload, years: number[], options: CalendarImageOptions): string {
   const format = options.format ?? ((value: number) => String(value));
+  const inRange = options.inRange ?? everyMonth;
   const pitch = CELL + GAP;
   const width = Math.max(LEFT + years.length * pitch + 16, 360);
   const gridBottom = TOP + 12 * pitch;
@@ -225,11 +232,14 @@ export function calendarSvg(payload: CalendarPayload, years: number[], options: 
       }
       const shown = options.value(harmonized, { year, month, column });
       const partial = Boolean(payload.partial[month][column]);
-      const label = `${MONTH_NAMES[month]} ${year}: ${shown === null ? "—" : format(shown)}${partial ? " (partial month)" : ""}`;
+      const outside = !inRange(year, month);
+      const label = `${MONTH_NAMES[month]} ${year}: ${shown === null ? "—" : format(shown)}${partial ? " (partial month)" : ""}${
+        outside ? " (outside the range)" : ""
+      }`;
       parts.push(
         `<rect class="cell" x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="3" fill="${options.color(shown)}"${
           partial ? ' stroke="#0f172a" stroke-dasharray="3 2"' : ""
-        }><title>${escapeXml(label)}</title></rect>`,
+        }${outside ? ' opacity="0.2"' : ""}><title>${escapeXml(label)}</title></rect>`,
       );
     }
   });

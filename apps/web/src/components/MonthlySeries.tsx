@@ -5,14 +5,22 @@ import { formatIndex } from "@/lib/format";
 import type { CalendarPayload } from "@/lib/types";
 
 /** S5: the monthly series over the selected range, one point per month. */
-export function MonthlySeries({ payload, years }: { payload: CalendarPayload; years: number[] }) {
+export function MonthlySeries({
+  payload,
+  years,
+  inRange,
+}: {
+  payload: CalendarPayload;
+  years: number[];
+  inRange?: (year: number, month: number) => boolean;
+}) {
   const points: { x: number; value: number; year: number; month: number }[] = [];
   years.forEach((year) => {
     const column = payload.years.indexOf(year);
     if (column < 0) return;
     for (let month = 0; month < 12; month += 1) {
       const value = payload.harmonized[month][column];
-      if (value === null) continue;
+      if (value === null || (inRange && !inRange(year, month))) continue;
       points.push({ x: year * 12 + month, value, year, month });
     }
   });
