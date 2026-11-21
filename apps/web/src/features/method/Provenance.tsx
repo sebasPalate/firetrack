@@ -1,7 +1,7 @@
 "use client";
 
-import { formatCount, formatIndex, formatPercent } from "@/lib/format";
-import type { MethodPayload } from "@/lib/types";
+import { formatCount, formatIndex, formatPercent } from "@/shared/format";
+import type { MethodPayload } from "@/shared/types";
 
 /** S8: sources, method, calibration window and known limitations, in plain words. */
 export function Provenance({ method }: { method: MethodPayload }) {

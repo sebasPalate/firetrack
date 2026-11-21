@@ -4,8 +4,8 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { calendarCsv, calendarSvg, summarize } from "../src/lib/insights.ts";
-import type { CalendarPayload } from "../src/lib/types.ts";
+import { calendarCsv, calendarSvg, summarize } from "../src/features/calendar/insights.ts";
+import type { CalendarPayload } from "../src/shared/types.ts";
 
 const DATA = join(dirname(fileURLToPath(import.meta.url)), "..", "public", "data");
 

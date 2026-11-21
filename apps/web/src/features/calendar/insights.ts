@@ -1,4 +1,4 @@
-import type { CalendarPayload } from "./types";
+import type { CalendarPayload } from "@/shared/types";
 
 /**
  * The answers a fire manager wants before reading the calendar cell by cell,

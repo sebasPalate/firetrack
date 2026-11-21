@@ -1,7 +1,7 @@
 "use client";
 
-import { formatIndex, formatPercent } from "@/lib/format";
-import type { Holdout, MethodPayload } from "@/lib/types";
+import { formatIndex, formatPercent } from "@/shared/format";
+import type { Holdout, MethodPayload } from "@/shared/types";
 
 /**
  * S10: during the overlap window the calibrated index has to reproduce the

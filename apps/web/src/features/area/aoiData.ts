@@ -8,9 +8,9 @@ import {
   validateBox,
   type Bbox,
   type YearDetections,
-} from "./aoi";
-import { ApiError, detectionsYearUrl, fetchCalendar, fetchMethod } from "./api";
-import type { CalendarPayload, MethodPayload, Region } from "./types";
+} from "@/features/area/aoi";
+import { ApiError, detectionsYearUrl, fetchCalendar, fetchMethod } from "@/shared/api";
+import type { CalendarPayload, MethodPayload, Region } from "@/shared/types";
 
 /** Parallel year downloads: enough to fill the pipe, few enough to keep progress honest. */
 const CONCURRENCY = 6;

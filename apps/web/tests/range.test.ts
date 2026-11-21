@@ -10,7 +10,7 @@ import {
   makeRange,
   parseRangeBound,
   rangeLabel,
-} from "../src/lib/range.ts";
+} from "../src/features/range/range.ts";
 
 const jun22: { year: number; month: number } = { year: 2022, month: 5 };
 const sep22 = { year: 2022, month: 8 };

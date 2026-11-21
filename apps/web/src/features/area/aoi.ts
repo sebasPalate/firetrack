@@ -1,4 +1,4 @@
-import type { CalendarPayload, MethodPayload, Region } from "./types";
+import type { CalendarPayload, MethodPayload, Region } from "@/shared/types";
 
 /**
  * A custom area of interest, computed in the browser.

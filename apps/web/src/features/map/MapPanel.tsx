@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { DayBars } from "@/components/DayBars";
+import { DayBars } from "@/features/map/DayBars";
 import {
   clamp,
   confidenceLabel,
@@ -15,10 +15,10 @@ import {
   VIIRS_COLOR,
   type DayCounts,
   type Point,
-} from "@/components/mapShared";
-import { StrongestDetections } from "@/components/StrongestDetections";
-import { inBox, type Bbox } from "@/lib/aoi";
-import { useMapView } from "@/components/useMapView";
+} from "@/features/map/mapShared";
+import { StrongestDetections } from "@/features/map/StrongestDetections";
+import { inBox, type Bbox } from "@/features/area/aoi";
+import { useMapView } from "@/features/map/useMapView";
 import {
   DetectionsError,
   familyOf,
@@ -26,10 +26,10 @@ import {
   rowsInMonth,
   type Detection,
   type Family,
-} from "@/lib/detections";
-import { MONTHS, formatCount } from "@/lib/format";
-import { geoJsonToPath, loadBoundary, makeProjection } from "@/lib/geo";
-import type { Region } from "@/lib/types";
+} from "@/features/map/detections";
+import { MONTHS, formatCount } from "@/shared/format";
+import { geoJsonToPath, loadBoundary, makeProjection } from "@/features/map/geo";
+import type { Region } from "@/shared/types";
 
 type Props = {
   region: Region;

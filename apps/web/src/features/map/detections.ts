@@ -1,4 +1,4 @@
-import { detectionsYearUrl } from "./api";
+import { detectionsYearUrl } from "@/shared/api";
 
 export type Family = "MODIS" | "VIIRS";
 

@@ -2,8 +2,8 @@
 
 import type { ReactNode } from "react";
 
-import type { Detection, Family } from "@/lib/detections";
-import { formatCount } from "@/lib/format";
+import type { Detection, Family } from "@/features/map/detections";
+import { formatCount } from "@/shared/format";
 
 export const MODIS_COLOR = "#fbbf24";
 export const VIIRS_COLOR = "#38bdf8";

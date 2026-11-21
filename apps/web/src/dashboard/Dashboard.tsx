@@ -2,46 +2,45 @@
 
 import { useSyncExternalStore, useEffect, useMemo, useRef, useState } from "react";
 
-import { AreaForm } from "@/components/AreaForm";
-import { AtAGlance } from "@/components/AtAGlance";
-import { CalendarHeatmap } from "@/components/CalendarHeatmap";
-import { DetailPanel } from "@/components/DetailPanel";
-import { GuidedTour, type TourStep } from "@/components/GuidedTour";
-import { MapPanel } from "@/components/MapPanel";
-import { MonthlySeries } from "@/components/MonthlySeries";
-import { Provenance } from "@/components/Provenance";
-import { RangePicker } from "@/components/RangePicker";
-import { Seasonality } from "@/components/Seasonality";
-import { TimeControls } from "@/components/TimeControls";
-import { Validation } from "@/components/Validation";
-import { YearlyTotals } from "@/components/YearlyTotals";
+import { AreaForm } from "@/features/area/AreaForm";
+import { AtAGlance } from "@/features/calendar/AtAGlance";
+import { CalendarHeatmap } from "@/features/calendar/CalendarHeatmap";
+import { DetailPanel } from "@/features/calendar/DetailPanel";
+import { GuidedTour, type TourStep } from "@/features/tour/GuidedTour";
+import { MapPanel } from "@/features/map/MapPanel";
+import { MonthlySeries } from "@/features/calendar/MonthlySeries";
+import { Provenance } from "@/features/method/Provenance";
+import { RangePicker } from "@/features/range/RangePicker";
+import { Seasonality } from "@/features/calendar/Seasonality";
+import { TimeControls } from "@/features/calendar/TimeControls";
+import { Validation } from "@/features/method/Validation";
+import { YearlyTotals } from "@/features/calendar/YearlyTotals";
 import {
   ApiError,
   DATA_SOURCE,
   STATIC_MODE,
   detectionsCsvUrl,
-  downloadDetections,
   fetchCalendar,
   fetchMethod,
   fetchRegions,
-} from "@/lib/api";
-import { AOI_SOURCE_REGION, CUSTOM_REGION_ID, clampBox, formatBox, validateBox, type Bbox } from "@/lib/aoi";
-import { loadCustomArea } from "@/lib/aoiData";
-import { diverging, sequential } from "@/lib/colors";
-import { saveBlob, saveText, slug, svgToPng } from "@/lib/download";
-import { MONTHS, formatIndex, formatPercent } from "@/lib/format";
-import { calendarCsv, calendarSvg, summarize } from "@/lib/insights";
-import { clampRange, inRange, isWholeYears, makeRange, rangeLabel, type MonthRange, type YearMonth } from "@/lib/range";
-import type { CalendarPayload, MethodPayload, Region } from "@/lib/types";
+} from "@/shared/api";
+import { AOI_SOURCE_REGION, CUSTOM_REGION_ID, clampBox, formatBox, validateBox, type Bbox } from "@/features/area/aoi";
+import { loadCustomArea } from "@/features/area/aoiData";
+import { downloadDetections } from "@/features/exports/downloadDetections";
+import { diverging, sequential } from "@/shared/colors";
+import { saveBlob, saveText, slug, svgToPng } from "@/shared/download";
+import { MONTHS, formatIndex, formatPercent } from "@/shared/format";
+import { calendarCsv, calendarSvg, summarize } from "@/features/calendar/insights";
+import { clampRange, inRange, isWholeYears, makeRange, rangeLabel, type MonthRange, type YearMonth } from "@/features/range/range";
+import type { CalendarPayload, MethodPayload, Region } from "@/shared/types";
 import {
   parseUrlState,
   subscribeToUrl,
   urlSnapshot,
   writeUrlState,
-  type Series,
   type UrlState,
-  type ViewMode,
-} from "@/lib/urlState";
+} from "@/dashboard/urlState";
+import type { Series, ViewMode } from "@/features/calendar/view";
 
 type Selection = { year: number; month: number };
 

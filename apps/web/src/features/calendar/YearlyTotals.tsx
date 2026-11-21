@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 
-import { formatCount, formatIndex } from "@/lib/format";
-import type { CalendarPayload } from "@/lib/types";
-import type { Series } from "@/lib/urlState";
+import { formatCount, formatIndex } from "@/shared/format";
+import type { CalendarPayload } from "@/shared/types";
+import type { Series } from "@/features/calendar/view";
 
 type Props = {
   payload: CalendarPayload;

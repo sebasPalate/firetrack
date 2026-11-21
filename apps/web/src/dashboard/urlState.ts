@@ -6,11 +6,10 @@
  * It uses `history.replaceState` directly: no navigation, no re-render, no
  * scroll jump, and it works the same on a static export under a base path.
  */
-import { formatBox, parseBox, type Bbox } from "./aoi";
-import { formatRangeBound, parseRangeBound, type YearMonth } from "./range";
+import { formatBox, parseBox, type Bbox } from "@/features/area/aoi";
+import { formatRangeBound, parseRangeBound, type YearMonth } from "@/features/range/range";
 
-export type Series = "raw" | "harmonized" | "compare";
-export type ViewMode = "index" | "anomaly";
+import type { Series, ViewMode } from "@/features/calendar/view";
 
 export type UrlState = {
   region?: string;
