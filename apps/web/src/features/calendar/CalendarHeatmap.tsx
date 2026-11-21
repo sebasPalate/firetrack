@@ -2,9 +2,9 @@
 
 import { useRef, useState } from "react";
 
-import { diverging, sequential, textOn } from "@/lib/colors";
-import { MONTHS, formatCount, formatIndex, formatPercent } from "@/lib/format";
-import type { CalendarPayload } from "@/lib/types";
+import { diverging, sequential, textOn } from "@/shared/colors";
+import { MONTHS, formatCount, formatIndex, formatPercent } from "@/shared/format";
+import type { CalendarPayload } from "@/shared/types";
 
 type Selection = { year: number; month: number };
 

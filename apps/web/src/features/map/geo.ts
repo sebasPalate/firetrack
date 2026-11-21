@@ -1,4 +1,4 @@
-import { boundaryUrl } from "./api";
+import { boundaryUrl } from "@/shared/api";
 
 /** Width of the map's own coordinate space. Height follows the region's aspect ratio. */
 export const MAP_WIDTH = 1000;

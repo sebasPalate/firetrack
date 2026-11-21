@@ -1,8 +1,8 @@
 "use client";
 
-import { sequential } from "@/lib/colors";
-import { MONTHS, formatIndex } from "@/lib/format";
-import type { CalendarPayload } from "@/lib/types";
+import { sequential } from "@/shared/colors";
+import { MONTHS, formatIndex } from "@/shared/format";
+import type { CalendarPayload } from "@/shared/types";
 
 /** Height of the tallest bar, in pixels. */
 const TRACK_PX = 128;

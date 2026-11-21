@@ -1,6 +1,6 @@
 "use client";
 
-import { Glyph, type Point } from "@/components/mapShared";
+import { Glyph, type Point } from "@/features/map/mapShared";
 
 /**
  * The five brightest pixels of the month. Hovering one highlights it on the map;

@@ -282,12 +282,11 @@ docs/          write-ups, generated figures, README artwork
 
 ```
 src/app/         layout.tsx, page.tsx, globals.css: shell, dark theme, Tailwind entry
-src/components/  Dashboard holds the state, the URL sync and the controls; one file
-                 per panel: CalendarHeatmap, MonthlySeries, YearlyTotals,
-                 Seasonality, MapPanel, DetailPanel, Validation, Provenance,
-                 TimeControls, GuidedTour
-src/lib/         the contract and the plumbing: types.ts, api.ts, urlState.ts,
-                 geo.ts, detections.ts, colors.ts, format.ts
+src/dashboard/   the page: composes the features and owns the link (urlState.ts)
+src/features/    one folder per thing the product does: area, range, calendar,
+                 map, method, tour, exports
+src/shared/      no product knowledge: the contract (types.ts), api.ts, format,
+                 colours, file saving; lint stops it importing features/
 public/data/     the static export the browser reads (regions, calendar, method, CSV)
 ```
 

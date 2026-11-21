@@ -49,23 +49,41 @@ Both modes are built by `pipeline/payloads.py`, so they show the same numbers.
 
 ## What is here
 
+The code is organised by what the product does. One rule holds it together, and `npm run lint` enforces
+it: `shared/` knows nothing about the product, and `features/` never reach up into the page.
+
+```
+src/
+  app/          Next.js entry: layout and page
+  dashboard/    the page: composes the features, owns the link (urlState.ts)
+  features/
+    area/       custom area: form, box checks, calendar rules ported from the pipeline, data loader
+    range/      the month range and its picker
+    calendar/   calendar, at-a-glance, detail panel, yearly totals, seasonality, series, exports
+    map/        hotspot map, per-day bars, zoom and pan, detections loader, projection
+    method/     validation and provenance
+    tour/       guided tour
+    exports/    the detections CSV, cut by area and range
+  shared/       artifact contract (types.ts), data access (api.ts), formatting, colours, file saving
+```
+
 | Path | Purpose |
 |---|---|
-| `src/lib/types.ts` | the artifact contract, mirrored from `pipeline/payloads.py` and `pipeline/harmonize.py` |
-| `src/lib/api.ts` | static or API fetch, `ApiError`, CSV download in both modes |
-| `src/lib/aoi.ts` | custom area: box checks, CSV filter, the calendar rules ported from the pipeline |
-| `src/lib/aoiData.ts` | loads and caches the Spain detections a custom area is cut from |
-| `src/components/AreaForm.tsx` | the west/south/east/north form; the map's *Draw area* is the other way in |
-| `src/lib/range.ts` | the month range: membership, link format (`2022-06`, or a bare year), labels |
-| `src/components/RangePicker.tsx` | From / To, each a month and a year |
-| `src/lib/insights.ts` | the at-a-glance summary, the monthly table CSV and the calendar as a standalone SVG |
-| `src/lib/download.ts` | saves a file, and turns the calendar SVG into a PNG |
-| `src/components/AtAGlance.tsx` | the summary cards above the calendar |
-| `src/lib/colors.ts` | viridis and coolwarm ramps, both colourblind-safe |
-| `src/components/Dashboard.tsx` | region/range controls, loading and error states, layout |
-| `src/components/CalendarHeatmap.tsx` | the calendar: a CSS grid, one cell per month |
-| `src/components/Validation.tsx` | overlap check, 2012 step and the blind test (Aqua hidden 2017 to 2020) |
-| `src/components/*.tsx` | detail panel, yearly totals, seasonality, monthly series, provenance |
+| `src/shared/types.ts` | the artifact contract, mirrored from `pipeline/payloads.py` and `pipeline/harmonize.py` |
+| `src/shared/api.ts` | static or API fetch, `ApiError`, data URLs |
+| `src/features/area/aoi.ts` | custom area: box checks, CSV filter, the calendar rules ported from the pipeline |
+| `src/features/range/range.ts` | the month range: membership, link format (`2022-06`, or a bare year), labels |
+| `src/features/calendar/insights.ts` | the at-a-glance summary, the monthly table CSV and the calendar as a standalone SVG |
+| `src/features/exports/downloadDetections.ts` | the detections CSV for a region or a custom box, in a month range |
+| `src/shared/colors.ts` | viridis and coolwarm ramps, both colourblind-safe |
+| `src/dashboard/Dashboard.tsx` | the container: composes the panels; loading and error states, layout |
+| `src/dashboard/hooks.ts` | region list, region or custom-area data, link sync, playback, detections download, status line |
+| `src/dashboard/useCalendarExports.ts`, `useTour.tsx` | calendar table and image downloads; the guided tour's steps |
+| `src/dashboard/ControlsBar.tsx`, `CalendarToolbar.tsx` | the controls box and the bar above the calendar, presentation only |
+| `src/dashboard/calendarView.ts` | which month opens, the colour scale, the busiest month of a year |
+| `src/features/method/Validation.tsx` | overlap check, 2012 step and the blind test (Aqua hidden 2017 to 2020) |
+
+`aoi.ts`, `range.ts` and `insights.ts` have no runtime imports, so `npm test` runs them as plain TypeScript.
 
 No charting or map library on purpose: the calendar is a CSS grid, the series are inline SVG, and the
 accessibility of every cell is under our control. The hotspot map layer is a documented "should have" that

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { Bbox } from "@/lib/aoi";
+import type { Bbox } from "@/features/area/aoi";
 
 type Props = {
   initial: Bbox;

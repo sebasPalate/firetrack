@@ -1,7 +1,7 @@
 "use client";
 
-import { MONTHS, formatCount, formatIndex, formatPercent } from "@/lib/format";
-import type { Summary } from "@/lib/insights";
+import { MONTHS, formatCount, formatIndex, formatPercent } from "@/shared/format";
+import type { Summary } from "@/features/calendar/insights";
 
 type Selection = { year: number; month: number };
 

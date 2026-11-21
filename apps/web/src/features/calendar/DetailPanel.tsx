@@ -1,7 +1,7 @@
 "use client";
 
-import { MONTHS, formatCount, formatDelta, formatIndex, formatPercent } from "@/lib/format";
-import type { CalendarPayload } from "@/lib/types";
+import { MONTHS, formatCount, formatDelta, formatIndex, formatPercent } from "@/shared/format";
+import type { CalendarPayload } from "@/shared/types";
 
 type Selection = { year: number; month: number };
 

@@ -1,8 +1,8 @@
 "use client";
 
-import { MONTHS } from "@/lib/format";
+import { MONTHS } from "@/shared/format";
 
-import { MODIS_COLOR, VIIRS_COLOR, type DayCounts } from "@/components/mapShared";
+import { MODIS_COLOR, VIIRS_COLOR, type DayCounts } from "@/features/map/mapShared";
 
 /**
  * One bar per day of the month, split by sensor. The point of the panel: a day

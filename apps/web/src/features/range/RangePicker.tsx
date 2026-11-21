@@ -1,7 +1,7 @@
 "use client";
 
-import { MONTHS } from "@/lib/format";
-import { makeRange, type MonthRange, type YearMonth } from "@/lib/range";
+import { MONTHS } from "@/shared/format";
+import { makeRange, type MonthRange, type YearMonth } from "@/features/range/range";
 
 type Props = {
   /** The years the data covers. */

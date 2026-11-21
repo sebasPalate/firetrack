@@ -15,8 +15,8 @@ import {
   validateBox,
   type Bbox,
   type YearDetections,
-} from "../src/lib/aoi.ts";
-import type { CalendarPayload, MethodPayload, Region } from "../src/lib/types.ts";
+} from "../src/features/area/aoi.ts";
+import type { CalendarPayload, MethodPayload, Region } from "../src/shared/types.ts";
 
 const DATA = join(dirname(fileURLToPath(import.meta.url)), "..", "public", "data");
 const SPAIN_BOX: Bbox = [-9.31, 36.0, 4.33, 43.8];

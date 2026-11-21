@@ -1,8 +1,8 @@
 "use client";
 
-import { sequential } from "@/lib/colors";
-import { formatIndex } from "@/lib/format";
-import type { CalendarPayload } from "@/lib/types";
+import { sequential } from "@/shared/colors";
+import { formatIndex } from "@/shared/format";
+import type { CalendarPayload } from "@/shared/types";
 
 /** S5: the monthly series over the selected range, one point per month. */
 export function MonthlySeries({
