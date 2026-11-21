@@ -76,7 +76,11 @@ src/
 | `src/features/calendar/insights.ts` | the at-a-glance summary, the monthly table CSV and the calendar as a standalone SVG |
 | `src/features/exports/downloadDetections.ts` | the detections CSV for a region or a custom box, in a month range |
 | `src/shared/colors.ts` | viridis and coolwarm ramps, both colourblind-safe |
-| `src/dashboard/Dashboard.tsx` | composes the panels; loading and error states, layout |
+| `src/dashboard/Dashboard.tsx` | the container: composes the panels; loading and error states, layout |
+| `src/dashboard/hooks.ts` | region list, region or custom-area data, link sync, playback, detections download, status line |
+| `src/dashboard/useCalendarExports.ts`, `useTour.tsx` | calendar table and image downloads; the guided tour's steps |
+| `src/dashboard/ControlsBar.tsx`, `CalendarToolbar.tsx` | the controls box and the bar above the calendar, presentation only |
+| `src/dashboard/calendarView.ts` | which month opens, the colour scale, the busiest month of a year |
 | `src/features/method/Validation.tsx` | overlap check, 2012 step and the blind test (Aqua hidden 2017 to 2020) |
 
 `aoi.ts`, `range.ts` and `insights.ts` have no runtime imports, so `npm test` runs them as plain TypeScript.

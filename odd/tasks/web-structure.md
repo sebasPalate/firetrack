@@ -13,11 +13,12 @@ Branch: `refactor/web-features`, stacked on `feat/month-range` (PR #50, still op
 
 ## Tasks
 
-- [x] T1 (S1, S2, S3, S5) inline — move files by feature, move `downloadDetections` out of `shared/api.ts`, lint rule.
-- [ ] T2 (S1, S4) inline — split `Dashboard.tsx` into hooks.
+- [x] T1 (S1, S2, S3, S5) inline, commit 1432e12 — move files by feature, move `downloadDetections` out of `shared/api.ts`, lint rule.
+- [x] T2 (S1, S4) inline — split `Dashboard.tsx` into hooks.
 
 ## Log
 
 - L1 (2026-11-21, user): asked whether the project's organisation and architecture are correct and how an expert would organise it; after the review: "Dale" to the Dashboard refactor plus the feature-based web structure.
 - L2: Correction: PR #50 is still open, so this branch is stacked on `feat/month-range` instead of `develop`.
 - L3: T1 done. Files moved with `git mv`; `downloadDetections` moved to `features/exports/`, `Series`/`ViewMode` to `features/calendar/view.ts`, so `shared/` imports no feature. Lint rule proven: a probe import from `shared/` into `features/`, and one from `features/` into `dashboard/`, both fail lint. `npm test` 27/27, lint, tsc and build clean. All three browser check scripts give the same results as on `feat/month-range`.
+- L4: T2 done. `Dashboard.tsx` 898 → 413 lines, mostly layout; logic in `hooks.ts` (useRegions, useRegionData, useUrlSync, usePlayback, useDetectionsDownload, useNotice), `useCalendarExports.ts`, `useTour.tsx`, `calendarView.ts`; presentation in `ControlsBar.tsx` and `CalendarToolbar.tsx`. New tour/playback browser check run on the build before T2 (stash) and after: identical output. The three earlier batteries give the same results. `npm test` 27/27, lint, tsc, build clean.
