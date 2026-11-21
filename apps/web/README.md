@@ -7,7 +7,7 @@ pipeline's own rules (`src/lib/aoi.ts`). This app never reads FIRMS, DuckDB or P
 ```powershell
 npm install
 npm run dev     # http://localhost:3000
-npm test        # node --test: the custom-area calendar reproduces calendar/spain.json
+npm test        # node --test: custom-area calendar, summary and calendar exports
 npm run build
 ```
 
@@ -56,6 +56,9 @@ Both modes are built by `pipeline/payloads.py`, so they show the same numbers.
 | `src/lib/aoi.ts` | custom area: box checks, CSV filter, the calendar rules ported from the pipeline |
 | `src/lib/aoiData.ts` | loads and caches the Spain detections a custom area is cut from |
 | `src/components/AreaForm.tsx` | the west/south/east/north form; the map's *Draw area* is the other way in |
+| `src/lib/insights.ts` | the at-a-glance summary, the monthly table CSV and the calendar as a standalone SVG |
+| `src/lib/download.ts` | saves a file, and turns the calendar SVG into a PNG |
+| `src/components/AtAGlance.tsx` | the summary cards above the calendar |
 | `src/lib/colors.ts` | viridis and coolwarm ramps, both colourblind-safe |
 | `src/components/Dashboard.tsx` | region/range controls, loading and error states, layout |
 | `src/components/CalendarHeatmap.tsx` | the calendar: a CSS grid, one cell per month |

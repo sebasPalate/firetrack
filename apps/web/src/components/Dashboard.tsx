@@ -3,6 +3,7 @@
 import { useSyncExternalStore, useEffect, useMemo, useRef, useState } from "react";
 
 import { AreaForm } from "@/components/AreaForm";
+import { AtAGlance } from "@/components/AtAGlance";
 import { CalendarHeatmap } from "@/components/CalendarHeatmap";
 import { DetailPanel } from "@/components/DetailPanel";
 import { GuidedTour, type TourStep } from "@/components/GuidedTour";
@@ -25,7 +26,10 @@ import {
 } from "@/lib/api";
 import { AOI_SOURCE_REGION, CUSTOM_REGION_ID, clampBox, formatBox, validateBox, type Bbox } from "@/lib/aoi";
 import { loadCustomArea } from "@/lib/aoiData";
-import { MONTHS, formatPercent } from "@/lib/format";
+import { diverging, sequential } from "@/lib/colors";
+import { saveBlob, saveText, slug, svgToPng } from "@/lib/download";
+import { MONTHS, formatIndex, formatPercent } from "@/lib/format";
+import { calendarCsv, calendarSvg, summarize } from "@/lib/insights";
 import type { CalendarPayload, MethodPayload, Region } from "@/lib/types";
 import {
   parseUrlState,
@@ -339,6 +343,52 @@ function RegionView({
 
   const column = payload && selection ? payload.years.indexOf(selection.year) : -1;
 
+  const summary = useMemo(() => (payload && years.length ? summarize(payload, years) : null), [payload, years]);
+
+  /** File names say what is inside: the area and the range. */
+  function exportName(): string {
+    const area = aoi ? `aoi ${formatBox(aoi)}` : regionId;
+    return `firetrack-${slug(area)}-${years[0]}-${years[years.length - 1]}`;
+  }
+
+  function exportTable() {
+    if (!payload) return;
+    saveText(calendarCsv(payload, years), `${exportName()}-calendar.csv`, "text/csv;charset=utf-8");
+  }
+
+  function exportImage(format: "png" | "svg") {
+    if (!payload) return;
+    const index = mode === "index";
+    const last = years[years.length - 1];
+    const svg = calendarSvg(payload, years, {
+      title: `${payload.region.name} · burning activity calendar ${years[0]}–${last}`,
+      subtitle: index
+        ? "Harmonized activity index in Aqua MODIS detections (not a fire count). Dashed outline: partial month."
+        : "Anomaly against the multi-year median of the same calendar month. Dashed outline: partial month.",
+      value: index ? (harmonized) => harmonized : (_, cell) => payload.anomaly_pct[cell.month][cell.column],
+      color: (value) =>
+        value === null
+          ? "#e2e8f0"
+          : index
+            ? sequential(scale > 0 ? value / scale : 0)
+            : diverging(scale > 0 ? value / scale : 0),
+      legend: index ? ["0", formatIndex(scale)] : [`−${Math.round(scale)} %`, `+${Math.round(scale)} %`],
+      ramp: index ? [0, 0.25, 0.5, 0.75, 1].map(sequential) : [-1, -0.5, 0, 0.5, 1].map(diverging),
+      format: index ? formatIndex : formatPercent,
+    });
+    const name = `${exportName()}-calendar-${mode}`;
+    if (format === "svg") {
+      saveText(svg, `${name}.svg`, "image/svg+xml;charset=utf-8");
+      return;
+    }
+    svgToPng(svg)
+      .then((blob) => saveBlob(blob, `${name}.png`))
+      .catch((cause: unknown) => {
+        setNotice(cause instanceof Error ? cause.message : "The image could not be made.");
+        window.setTimeout(() => setNotice(null), 4000);
+      });
+  }
+
   const tourSteps = useMemo<TourStep[]>(() => {
     if (!method) return [];
     const { raw_step_2011_to_2013_pct: rawStep, aqua_step_2011_to_2013_pct: aquaStep, index_step_2011_to_2013_pct: indexStep } =
@@ -649,6 +699,17 @@ function RegionView({
 
       {payload && method && years.length ? (
         <div className="space-y-4">
+          {summary ? (
+            <AtAGlance
+              summary={summary}
+              range={[years[0], years[years.length - 1]]}
+              peakOfYear={(year) => busiestMonth(payload, year)}
+              onSelect={(next) => {
+                pick(next);
+                document.getElementById("section-calendar")?.scrollIntoView({ block: "start" });
+              }}
+            />
+          ) : null}
           <div id="section-calendar" className="grid scroll-mt-4 gap-4 lg:grid-cols-[2fr_1fr]">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -672,6 +733,33 @@ function RegionView({
                     }`}
                   >
                     Anomaly
+                  </button>
+                </div>
+                <div role="group" aria-label="Download the calendar" className="flex items-center gap-1">
+                  <span className="text-slate-500">Download</span>
+                  <button
+                    type="button"
+                    onClick={exportTable}
+                    title="One row per month in the range: index, raw detections, median, anomaly, sensor and factor."
+                    className="rounded-md border border-slate-700 px-2 py-1 text-slate-300 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
+                  >
+                    Table CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => exportImage("png")}
+                    title="The calendar as shown, as an image for a report or a slide."
+                    className="rounded-md border border-slate-700 px-2 py-1 text-slate-300 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
+                  >
+                    PNG
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => exportImage("svg")}
+                    title="The calendar as shown, as a vector image."
+                    className="rounded-md border border-slate-700 px-2 py-1 text-slate-300 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
+                  >
+                    SVG
                   </button>
                 </div>
                 {selection ? (
@@ -788,10 +876,9 @@ function latestUsable(payload: CalendarPayload): Selection {
   return { year: payload.years[lastColumn], month: 11 };
 }
 
-/** The busiest month of the last complete year: the one worth opening on the map. */
-function peakCell(payload: CalendarPayload): Selection {
-  let column = payload.years.length - 1;
-  while (column > 0 && payload.provisional[0][column]) column -= 1;
+/** The busiest observed month of one year. */
+function busiestMonth(payload: CalendarPayload, year: number): number {
+  const column = payload.years.indexOf(year);
   let best = 0;
   let bestValue = Number.NEGATIVE_INFINITY;
   for (let month = 0; month < 12; month += 1) {
@@ -801,5 +888,12 @@ function peakCell(payload: CalendarPayload): Selection {
       bestValue = value;
     }
   }
-  return { year: payload.years[column], month: best };
+  return best;
+}
+
+/** The busiest month of the last complete year: the one worth opening on the map. */
+function peakCell(payload: CalendarPayload): Selection {
+  let column = payload.years.length - 1;
+  while (column > 0 && payload.provisional[0][column]) column -= 1;
+  return { year: payload.years[column], month: busiestMonth(payload, payload.years[column]) };
 }
