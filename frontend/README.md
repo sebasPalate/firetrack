@@ -75,6 +75,7 @@ src/
 | `src/features/range/range.ts` | the month range: membership, link format (`2022-06`, or a bare year), labels |
 | `src/features/calendar/insights.ts` | the at-a-glance summary, the monthly table CSV and the calendar as a standalone SVG |
 | `src/features/exports/downloadDetections.ts` | the detections CSV for a region or a custom box, in a month range |
+| `src/shared/ui/` | shadcn/ui components (Base UI primitives), added with `npx shadcn@latest add <name>`; `components.json` points the CLI here |
 | `src/shared/colors.ts` | viridis and coolwarm ramps, both colourblind-safe |
 | `src/dashboard/Dashboard.tsx` | the container: composes the panels; loading and error states, layout |
 | `src/dashboard/hooks.ts` | region list, region or custom-area data, link sync, playback, detections download, status line |
@@ -84,6 +85,13 @@ src/
 | `src/features/method/Validation.tsx` | overlap check, 2012 step and the blind test (Aqua hidden 2017 to 2020) |
 
 `aoi.ts`, `range.ts` and `insights.ts` have no runtime imports, so `npm test` runs them as plain TypeScript.
+
+**UI components.** Accessible controls come from [shadcn/ui](https://ui.shadcn.com), copied into
+`src/shared/ui/` so they are ours to change. Their colour tokens (`--background`, `--primary`, …) in
+`src/app/globals.css` are the same slate and sky palette the hand-written panels use, so both look alike;
+no base layer is added, so existing elements keep their own styles. The charts stay hand-written SVG and CSS
+grid: shadcn's Recharts-based charts are not used. The `shadcn` package is a dev dependency (the CLI and its
+Tailwind variants); nothing from it ships to the browser except the components we add.
 
 No charting or map library on purpose: the calendar is a CSS grid, the series are inline SVG, and the
 accessibility of every cell is under our control. The hotspot map layer is a documented "should have" that
