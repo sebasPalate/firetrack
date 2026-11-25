@@ -236,9 +236,9 @@ España en 2016 son 2 bloques de 248.
 
 Lo importante: **el mirror no armoniza nada**. Copia las columnas de FIRMS tal cual. Los conteos siguen
 saltando cuando entra un satélite, la confianza sigue siendo 0-100 en MODIS y l/n/h en VIIRS, y `type` va
-vacío en todas las filas NRT. Toda la normalización sigue siendo trabajo nuestro, en `pipeline/`.
+vacío en todas las filas NRT. Toda la normalización sigue siendo trabajo nuestro, en el pipeline (`firetrack.pipeline`).
 
-`pipeline/firms.py` guarda un archivo por región y año (`data/cache/<región>/<año>.parquet`) con todos los
+`backend/src/firetrack/pipeline/firms.py` guarda un archivo por región y año (`data/cache/<región>/<año>.parquet`) con todos los
 niveles de confianza, y `data/sensor_days.parquet` con los días en que cada satélite mandó datos. Es
 **idempotente y reanudable**: los años cerrados no se vuelven a bajar y el año en curso se refresca cada 6 h.
 
@@ -335,20 +335,21 @@ píxel.
 
 | ID | Decisión | Motivo |
 |---|---|---|
-| **D1** | Monorepo `apps/web` + `services/api` + `pipeline/` + `data/` | El pipeline no es el backend |
+| **D1** | Monorepo `apps/web` + `services/api` + `pipeline/` + `data/` (reemplazada por D8) | El pipeline no es el backend |
 | **D2** | Regiones predefinidas con registro completo; AOI arbitraria en modo limitado | Un demo sin esperas: las regiones del demo se procesan antes. La ingesta completa de Iberia (27 años-región, 1,15 M detecciones) tarda **158 s** medidos, así que entran varias regiones en una sola sesión; el costo real es calibrar cada región, no descargarla |
 | **D3** | `MODIS` + `VIIRS_SNPP` + `VIIRS_NOAA20` + `VIIRS_NOAA21`, filas `sp` y `nrt` | S-NPP termina el 2026-11-02 |
 | **D4** | Se commitean los artefactos procesados (`data/processed/`, ~12 MB) y nunca el caché crudo | Un deploy sirve la app sin correr una ingesta de 158 s. El caché crudo (`data/cache/`, cientos de MB) sigue fuera del repo y se regenera |
 | **D5** | Next.js en Vercel; FastAPI en Railway/Render/Fly | Dos despliegues simples y gratuitos |
 | **D6** | **Regiones del demo:** España (península y Baleares) y Aragón. Sin Canarias. Recorte con el contorno oficial del IGN | España da señal suficiente y factores por mes visibles; Aragón es la historia local del evento de Zaragoza (§9.7) |
-| **D7** | Única ingesta: mirror Portolan en `pipeline/firms.py`. Sin `MAP_KEY` ni API de FIRMS | Sin clave ni límite de 5 días, verificado contra los archivos de NASA |
+| **D7** | Única ingesta: mirror Portolan en `firetrack/pipeline/firms.py`. Sin `MAP_KEY` ni API de FIRMS | Sin clave ni límite de 5 días, verificado contra los archivos de NASA |
+| **D8** | Dos carpetas por runtime: `backend/` es un único paquete Python (`firetrack`) con los módulos `pipeline`, `api` y `contract`; `frontend/` es el cliente Next.js | La API ya importaba el código de payloads del pipeline mediante `sys.path`; un paquete hace explícita esa dependencia y le da un lugar propio (`firetrack.contract`). La frontera de D1 se mantiene: `backend[api]` nunca instala las dependencias del pipeline |
 
 ## 14. Stack
 
 ```
-apps/web/          Next.js + TypeScript + Tailwind (calendario en CSS grid, series en SVG propio)
-services/api/      FastAPI + DuckDB
-pipeline/          Python: ingesta → normalización → armonización
+backend/           paquete Python firetrack: pipeline (ingesta → normalización → armonización),
+                   api (FastAPI + DuckDB) y contract (los payloads que ambos comparten)
+frontend/          Next.js + TypeScript + Tailwind (calendario en CSS grid, series en SVG propio)
 data/              regions.json + aoi/ (contornos) + artefactos procesados commiteados (caché crudo ignorado)
 ```
 
@@ -398,3 +399,6 @@ un error honesto.
   los archivos oficiales de NASA FIRMS (§9.3).
 - **Regiones del demo** (2026-11-15): se cierra D6. España (península y Baleares) y Aragón, con contornos
   oficiales del IGN en `data/aoi/`. Se quitan las 9 regiones candidatas de `regions.json` (§9.7).
+- **Cambio de estructura** (2026-11-25): D8 reemplaza las carpetas de D1. `pipeline/` y `services/api/`
+  pasan a ser módulos de un único paquete en `backend/`, con el contrato de payloads en `firetrack.contract`;
+  `apps/web/` pasa a ser `frontend/`. Regenerar los datos web con el pipeline movido da archivos idénticos.

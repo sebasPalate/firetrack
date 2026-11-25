@@ -233,9 +233,9 @@ that is 2 groups out of 248.
 
 The key point: **the mirror harmonizes nothing**. It carries the FIRMS columns verbatim. Counts still jump
 when a satellite joins, confidence is still 0-100 for MODIS and l/n/h for VIIRS, and `type` is empty for
-every NRT row. All normalization is still our job, in `pipeline/`.
+every NRT row. All normalization is still our job, in the pipeline (`firetrack.pipeline`).
 
-`pipeline/firms.py` keeps one file per region and year (`data/cache/<region>/<year>.parquet`) with every
+`backend/src/firetrack/pipeline/firms.py` keeps one file per region and year (`data/cache/<region>/<year>.parquet`) with every
 confidence level, plus `data/sensor_days.parquet` with the days each satellite delivered data. It is
 **idempotent and resumable**: finished years are never downloaded again and the current year is refreshed
 every 6 h.
@@ -334,20 +334,21 @@ allows.
 
 | ID | Decision | Reason |
 |---|---|---|
-| **D1** | Monorepo `apps/web` + `services/api` + `pipeline/` + `data/` | The pipeline is not the backend |
+| **D1** | Monorepo `apps/web` + `services/api` + `pipeline/` + `data/` (superseded by D8) | The pipeline is not the backend |
 | **D2** | Predefined regions with the full record; arbitrary AOI in limited mode | A demo without waiting: demo regions are processed beforehand. The full Iberia ingest (27 region-years, 1.15 M detections) takes a measured **158 s**, so several regions fit in a single run; the real cost is calibrating a region, not downloading it |
 | **D3** | `MODIS` + `VIIRS_SNPP` + `VIIRS_NOAA20` + `VIIRS_NOAA21`, `sp` and `nrt` rows | S-NPP ends on 2026-11-02 |
 | **D4** | Commit the processed artifacts (`data/processed/`, ~12 MB), never the raw cache | A deploy serves the app without running a 158 s ingest. The raw cache (`data/cache/`, hundreds of MB) stays out of the repo and is rebuilt |
 | **D5** | Next.js on Vercel; FastAPI on Railway/Render/Fly | Two simple, free deployments |
 | **D6** | **Demo regions:** Spain (mainland and Balearic Islands) and Aragón. No Canary Islands. Clipped to the official IGN boundary | Spain gives enough signal and visible per-month factors; Aragón is the local story for the Zaragoza event (§9.7) |
-| **D7** | Single ingest: the Portolan mirror in `pipeline/firms.py`. No `MAP_KEY`, no FIRMS API | No key and no 5-day cap, checked against the NASA files |
+| **D7** | Single ingest: the Portolan mirror in `firetrack/pipeline/firms.py`. No `MAP_KEY`, no FIRMS API | No key and no 5-day cap, checked against the NASA files |
+| **D8** | Two folders by runtime: `backend/` is one Python package (`firetrack`) with `pipeline`, `api` and `contract` modules; `frontend/` is the Next.js client | The API already imported the pipeline's payload code through `sys.path`; a package makes that dependency explicit and gives it one home (`firetrack.contract`). D1's boundary holds: `backend[api]` never installs the pipeline's dependencies |
 
 ## 14. Stack
 
 ```
-apps/web/          Next.js + TypeScript + Tailwind (calendar in CSS grid, series in hand-rolled SVG)
-services/api/      FastAPI + DuckDB
-pipeline/          Python: ingest → normalize → harmonize
+backend/           Python package firetrack: pipeline (ingest → normalize → harmonize),
+                   api (FastAPI + DuckDB) and contract (the payloads both share)
+frontend/          Next.js + TypeScript + Tailwind (calendar in CSS grid, series in hand-rolled SVG)
 data/              regions.json + aoi/ (boundaries) + committed processed artifacts (raw cache gitignored)
 ```
 
@@ -397,3 +398,6 @@ honest error.
   the official NASA FIRMS files (§9.3).
 - **Demo regions** (2026-11-15): D6 is closed. Spain (mainland and Balearic Islands) and Aragón, with official
   IGN boundaries in `data/aoi/`. The 9 candidate regions are removed from `regions.json` (§9.7).
+- **Structure change** (2026-11-25): D8 replaces D1's folders. `pipeline/` and `services/api/` become
+  modules of one package in `backend/`, with the payload contract in `firetrack.contract`; `apps/web/`
+  becomes `frontend/`. Regenerating the web data with the moved pipeline gives byte-identical files.

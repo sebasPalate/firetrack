@@ -1,0 +1,7 @@
+# Python toolchain for the backend
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/

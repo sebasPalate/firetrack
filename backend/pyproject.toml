@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "firetrack"
+version = "0.1.0"
+description = "Harmonized MODIS and VIIRS hotspot activity: the batch pipeline, the read-only API and the contract between them."
+requires-python = ">=3.12"
+# The contract (firetrack.contract) needs nothing outside the standard library.
+# Each unit declares its own dependencies, so the API never installs the pipeline's.
+dependencies = []
+
+[project.optional-dependencies]
+# Ingest, harmonization and export: the work that only runs offline.
+pipeline = [
+  "duckdb>=2.0.0,<3",
+  "pandas>=3.1.1",
+  "pyarrow>=26.0.1",
+]
+# The read-only analytics API.
+api = [
+  "fastapi>=0.162.5",
+  "uvicorn[standard]>=0.54.0",
+  "duckdb>=2.0.0",
+  "pyarrow>=26.0.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
