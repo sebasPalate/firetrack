@@ -62,7 +62,7 @@ The shortest way to understand Firetrack is to move from the experience to the e
 | Deployment | Public GitHub Pages demo built from `main` |
 
 Demo regions are `spain` (mainland and Balearic Islands) and `aragon`, whose factors borrow Spain's
-seasonal shape. The figures below are drawn from the `spain` artifacts by `python -m pipeline.charts`.
+seasonal shape. The figures below are drawn from the `spain` artifacts by `python -m firetrack.pipeline.charts`.
 
 ---
 
@@ -229,10 +229,10 @@ works offline in the demo.
 flowchart TD
   F[("NASA FIRMS<br/>MODIS C6.1 + VIIRS 375 m")]
   M["Portolan GeoParquet mirror<br/>CC0, one file per year<br/>DuckDB reads only the region's row groups"]
-  P["pipeline/<br/>firms → normalize → harmonize<br/>calibration and artifacts"]
+  P["backend/ · firetrack.pipeline<br/>firms → normalize → harmonize<br/>calibration and artifacts"]
   D[("data/processed/<br/>Parquet artifacts, committed<br/>so a deploy needs no 158 s ingest")]
-  A["services/api/<br/>FastAPI + DuckDB, read-only"]
-  W["apps/web/<br/>Next.js + Tailwind<br/>hand-rolled SVG and CSS grid"]
+  A["backend/ · firetrack.api<br/>FastAPI + DuckDB, read-only"]
+  W["frontend/<br/>Next.js + Tailwind<br/>hand-rolled SVG and CSS grid"]
   F -->|"pipeline only, never at request time"| M
   M --> P
   P --> D
@@ -244,7 +244,9 @@ flowchart TD
 Three deliberate boundaries:
 
 - **The API never reads FIRMS or the mirror.** It serves precomputed artifacts only.
-- **The pipeline is not the backend.** Merging them puts pandas and the whole ETL inside the API image.
+- **The pipeline is not the API.** Both live in the `backend/` package and share its contract
+  (`firetrack.contract`), but each declares its own dependencies (`backend[pipeline]`, `backend[api]`),
+  so pandas and the whole ETL never reach the API install.
 - **Next.js is presentation only.** No DuckDB in serverless functions; the data layer stays in FastAPI.
 
 **Languages.** Python for ingest, harmonization and the API; TypeScript for the client; SQL through
@@ -253,7 +255,7 @@ DuckDB for every query that spans more than one year.
 ## How AI was used
 
 AI was a directed engineering tool here, not an author of the claims. Every number in this repository is
-produced by the pipeline in `pipeline/`, from code that is committed and reviewable.
+produced by the pipeline in `backend/src/firetrack/pipeline/`, from code that is committed and reviewable.
 
 - **Harness.** OpenCode and Pi as coding agents, directed through the gentle-ai orchestration layer —
   planning, bounded tasks and verification gates — inside VS Code, with a person reading every change
@@ -267,16 +269,15 @@ against Aqua, and the choice of demo regions. Those are ours, and `docs/problem.
 ## Repository layout
 
 ```
-apps/web/      Next.js client: calendar, panels, CSV download
-services/api/  FastAPI service and the artifact contract
-pipeline/      ingest, normalizer, harmonizer, tests
+backend/       one Python package (firetrack): the pipeline, the API and their contract
+frontend/      Next.js client: calendar, map, panels, downloads
 data/          demo regions, official boundaries, artifacts
 docs/          write-ups, generated figures, README artwork
 .github/       CI, the data build and the Pages deploy
 ```
 
 <details>
-<summary><code>apps/web/</code> — presentation only, no data layer</summary>
+<summary><code>frontend/</code> — presentation only, no data layer</summary>
 
 <br>
 
@@ -293,33 +294,26 @@ public/data/     the static export the browser reads (regions, calendar, method,
 </details>
 
 <details>
-<summary><code>services/api/</code> — read-only, artifacts only</summary>
+<summary><code>backend/</code> — one package, three modules, separate dependencies</summary>
 
 <br>
 
 ```
-main.py            FastAPI app: /health, /regions, /calendar, /detections, /method
-requirements.txt
-```
-
-</details>
-
-<details>
-<summary><code>pipeline/</code> — the work that only runs offline</summary>
-
-<br>
-
-```
-firms.py           ingest: Portolan mirror, per region and year cache, sensor days
-normalize.py       sensor-agnostic schema, confidence and acquisition time
-harmonize.py       calibration, monthly index, validation, artifact writer
-payloads.py        the response contract shared by the API and the static export
-regions.py         data/regions.json and the boundaries, point-in-polygon clip
-export_web.py      static JSON and CSV for the web app
-charts.py          the two generated figures in docs/img
-env.py             settings and cache paths
-tests/             one file per silent failure mode: firms, regions, normalize,
-                   harmonize, payloads
+pyproject.toml           the firetrack package; extras: [pipeline] and [api]
+src/firetrack/
+  paths.py               the repository root, defined once
+  contract/payloads.py   the response contract shared by the API and the static export
+  pipeline/              the work that only runs offline
+    firms.py             ingest: Portolan mirror, per region and year cache, sensor days
+    normalize.py         sensor-agnostic schema, confidence and acquisition time
+    harmonize.py         calibration, monthly index, validation, artifact writer
+    regions.py           data/regions.json and the boundaries, point-in-polygon clip
+    export_web.py        static JSON and CSV for the web app
+    charts.py            the two generated figures in docs/img
+    env.py               settings and cache paths
+  api/main.py            FastAPI, read-only: /health, /regions, /calendar, /detections, /method
+tests/                   one file per silent failure mode: firms, regions, normalize,
+                         harmonize, payloads
 ```
 
 </details>
@@ -347,10 +341,10 @@ sensor_days.parquet   observing days per satellite (gitignored)
 ```
 docs/problema.md      canonical document, Spanish
 docs/problem.md       full mirror, English
-docs/img/             the figures; two are redrawn by python -m pipeline.charts
+docs/img/             the figures; two are redrawn by python -m firetrack.pipeline.charts
 docs/readme/          hero.png and product.png, hand-made
 
-.github/workflows/    ci.yml runs the pipeline tests and the web lint and build;
+.github/workflows/    ci.yml runs the backend tests and the web tests, lint and build;
                       build-data.yml rebuilds the artifacts and opens a PR;
                       deploy-pages.yml ships the static site
 ```
@@ -363,21 +357,26 @@ docs/readme/          hero.png and product.png, hand-made
 <br>
 
 ```powershell
+cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r pipeline\requirements.txt -r services\api\requirements.txt
+pip install -e ".[pipeline,api]"
+cd ..
 ```
+
+The environment lives in `backend/.venv`, next to the `pyproject.toml` it installs. The commands below run
+from the repository root or from `backend/`; the package finds the repository on its own.
 
 No key and no `.env` are needed. The first run downloads the DuckDB `spatial` and `httpfs` extensions and
 the global sensor-days table (three columns per year, once):
 
 ```powershell
-python -m pipeline.firms spain --dry-run
-python -m pipeline.firms spain --from-year 2016 --to-year 2016
-python -m pipeline.firms spain aragon
-python -m pipeline.harmonize spain
-python -m pipeline.harmonize aragon --prior-region spain
-python -m pipeline.export_web
+python -m firetrack.pipeline.firms spain --dry-run
+python -m firetrack.pipeline.firms spain --from-year 2016 --to-year 2016
+python -m firetrack.pipeline.firms spain aragon
+python -m firetrack.pipeline.harmonize spain
+python -m firetrack.pipeline.harmonize aragon --prior-region spain
+python -m firetrack.pipeline.export_web
 ```
 
 The earlier full-Iberia ingest took about 158 s and the harmonization a few seconds; the ingest is resumable
@@ -387,19 +386,19 @@ when Suomi-NPP joins. The harmonizer prints the factor table and the validation 
 
 | Command | Purpose |
 |---|---|
-| `python -m pipeline.tests.test_firms` | bounding box, query and cache freshness (pure) |
-| `python -m pipeline.tests.test_regions` | demo regions, boundary files and point-in-polygon (pure) |
-| `python -m pipeline.tests.test_normalize` | confidence and time normalization (pure) |
-| `python -m pipeline.tests.test_harmonize` | shrinkage, source preference, partial months, artifact contract |
-| `python -m pipeline.firms` | ingest both demo regions (`spain`, `aragon`), resumable |
-| `python -m pipeline.harmonize <region>` | build `data/processed/` for one region, clipped to its official boundary |
-| `python -m pipeline.harmonize aragon --prior-region spain` | small region: monthly factors shrink towards Spain's |
-| `python -m pipeline.export_web` | write `apps/web/public/data/` (static JSON, yearly CSV and the boundary outline) for every built region |
-| `python -m pipeline.charts` | redraw `docs/img/salto_2012.svg` and `factor_por_mes.svg` from the artifacts |
-| `cd services\api; uvicorn main:app --reload` | API on <http://localhost:8000/docs> |
-| `cd apps\web; npm install; npm run dev` | client on <http://localhost:3000>; reads `public/data/` (static), or the API when `NEXT_PUBLIC_API_BASE` is set |
-| `cd apps\web; npm test` | web tests: the custom-area calendar against the pipeline's Spain calendar |
-| `cd apps\web; npm run build` | production build; the page is static, the data is fetched in the browser |
+| `cd backend; python -m tests.test_firms` | bounding box, query and cache freshness (pure) |
+| `cd backend; python -m tests.test_regions` | demo regions, boundary files and point-in-polygon (pure) |
+| `cd backend; python -m tests.test_normalize` | confidence and time normalization (pure) |
+| `cd backend; python -m tests.test_harmonize` | shrinkage, source preference, partial months, artifact contract |
+| `python -m firetrack.pipeline.firms` | ingest both demo regions (`spain`, `aragon`), resumable |
+| `python -m firetrack.pipeline.harmonize <region>` | build `data/processed/` for one region, clipped to its official boundary |
+| `python -m firetrack.pipeline.harmonize aragon --prior-region spain` | small region: monthly factors shrink towards Spain's |
+| `python -m firetrack.pipeline.export_web` | write `frontend/public/data/` (static JSON, yearly CSV and the boundary outline) for every built region |
+| `python -m firetrack.pipeline.charts` | redraw `docs/img/salto_2012.svg` and `factor_por_mes.svg` from the artifacts |
+| `uvicorn firetrack.api.main:app --reload` | API on <http://localhost:8000/docs> |
+| `cd frontend; npm install; npm run dev` | client on <http://localhost:3000>; reads `public/data/` (static), or the API when `NEXT_PUBLIC_API_BASE` is set |
+| `cd frontend; npm test` | web tests: the custom-area calendar against the pipeline's Spain calendar |
+| `cd frontend; npm run build` | production build; the page is static, the data is fetched in the browser |
 
 </details>
 
@@ -428,7 +427,7 @@ measured from the data (`sensor_days`), never hard-coded.
 **What the mirror does and does not do.** It carries the FIRMS columns verbatim (only `geometry` instead of
 latitude/longitude, expanded satellite names and an integer `confidence_pct` for MODIS). **Nothing is
 harmonized upstream**: counts still jump when a satellite joins, `confidence` is still 0-100 for MODIS and
-l/n/h for VIIRS, and `type` is empty for every near-real-time row. That work stays in `pipeline/`.
+l/n/h for VIIRS, and `type` is empty for every near-real-time row. That work stays in the pipeline (`backend/src/firetrack/pipeline/`).
 
 **How it is read.** Rows are sorted along a Hilbert curve in ~100k-row groups, each with its own bounding
 box, so DuckDB downloads only the row groups that touch the region. For central Spain in 2016 that is 2 of
@@ -477,9 +476,9 @@ Canary Islands are left out: a different fire regime 1,000 km away, and the 2021
 | `GET /detections?region=&start=&end=&limit=` | CSV of the detections behind the view (`Content-Disposition: attachment`) |
 | `GET /method?region=` | calibration table, validation statistics (overlap and blind test), boundary clip, limitations |
 
-The same payloads also exist as static files: `python -m pipeline.export_web` writes
-`apps/web/public/data/{regions.json, calendar/<region>.json, method/<region>.json, detections/<region>/<year>.csv}`
-with the code the API uses (`pipeline/payloads.py`), so the deployed site needs no server at all.
+The same payloads also exist as static files: `python -m firetrack.pipeline.export_web` writes
+`frontend/public/data/{regions.json, calendar/<region>.json, method/<region>.json, detections/<region>/<year>.csv}`
+with the code the API uses (`firetrack.contract.payloads`), so the deployed site needs no server at all.
 
 Missing artifacts return `503` with an actionable message. An empty chart that looks like "no fires" is
 worse than an honest error. `partial` months and `provisional` years are served but kept out of the
@@ -507,7 +506,7 @@ Python 3.13. No map library, no tile server and no chart library: the map and th
 by this repository.
 
 Images: `docs/readme/hero.png` and `docs/readme/product.png` are screenshots of this app; the three
-figures in `docs/img/` are generated from the artifacts by `python -m pipeline.charts`. No third-party
+figures in `docs/img/` are generated from the artifacts by `python -m firetrack.pipeline.charts`. No third-party
 imagery is used.
 
 We acknowledge the use of data and/or imagery from NASA's Fire Information for Resource Management System

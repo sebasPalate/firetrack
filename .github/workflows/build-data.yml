@@ -5,7 +5,7 @@ name: Build data
 #
 # Runs on its own when the pipeline, the regions or this file change on develop, and
 # by hand from the Actions tab once this file is also on the default branch.
-# The data commit only touches data/processed, apps/web/public/data and docs/img, so
+# The data commit only touches data/processed, frontend/public/data and docs/img, so
 # merging it never triggers this workflow again.
 
 on:
@@ -13,7 +13,7 @@ on:
   push:
     branches: [develop]
     paths:
-      - "pipeline/**"
+      - "backend/**"
       - "data/regions.json"
       - "data/aoi/**"
       - ".github/workflows/build-data.yml"
@@ -48,28 +48,27 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: |
-            pipeline/requirements.txt
-            services/api/requirements.txt
+          cache-dependency-path: backend/pyproject.toml
 
       - name: Install dependencies
-        run: python -m pip install -r pipeline/requirements.txt -r services/api/requirements.txt
+        run: python -m pip install -e "backend[pipeline,api]"
 
       # A pull request opened by this workflow does not start the CI workflow, so the
       # same tests run here before anything is committed.
-      - name: Run pipeline tests
+      - name: Run backend tests
+        working-directory: backend
         run: |
-          python -m pipeline.tests.test_firms
-          python -m pipeline.tests.test_regions
-          python -m pipeline.tests.test_normalize
-          python -m pipeline.tests.test_harmonize
-          python -m pipeline.tests.test_payloads
+          python -m tests.test_firms
+          python -m tests.test_regions
+          python -m tests.test_normalize
+          python -m tests.test_harmonize
+          python -m tests.test_payloads
 
       - name: Ingest from the Portolan mirror
         run: |
           # Resumable per region and year: a retry only fetches what failed.
           for attempt in 1 2 3; do
-            if python -m pipeline.firms spain aragon; then exit 0; fi
+            if python -m firetrack.pipeline.firms spain aragon; then exit 0; fi
             echo "::warning::ingest attempt $attempt failed, retrying"
             sleep 30
           done
@@ -77,13 +76,13 @@ jobs:
 
       - name: Harmonize
         run: |
-          python -m pipeline.harmonize spain | tee harmonize-spain.log
-          python -m pipeline.harmonize aragon --prior-region spain | tee harmonize-aragon.log
+          python -m firetrack.pipeline.harmonize spain | tee harmonize-spain.log
+          python -m firetrack.pipeline.harmonize aragon --prior-region spain | tee harmonize-aragon.log
 
       - name: Export for the web and redraw the figures
         run: |
-          python -m pipeline.export_web
-          python -m pipeline.charts
+          python -m firetrack.pipeline.export_web
+          python -m firetrack.pipeline.charts
 
       - name: Check the exported files
         run: |
@@ -91,7 +90,7 @@ jobs:
           import json, os
           from pathlib import Path
 
-          web = Path("apps/web/public/data")
+          web = Path("frontend/public/data")
           ids = [r["id"] for r in json.loads((web / "regions.json").read_text(encoding="utf-8"))]
           assert ids == ["spain", "aragon"], ids
           lines = ["| Region | Months | Years | Detections (CSV) | Blind test | Raw VIIRS |", "|---|---|---|---|---|---|"]
@@ -125,7 +124,7 @@ jobs:
           name: firetrack-data
           path: |
             data/processed
-            apps/web/public/data
+            frontend/public/data
             docs/img
             harmonize-*.log
           if-no-files-found: ignore
@@ -138,7 +137,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "$DATA_BRANCH"
-          git add -A data/processed apps/web/public/data docs/img
+          git add -A data/processed frontend/public/data docs/img
           if git diff --cached --quiet; then
             echo "The data did not change; nothing to commit."
             exit 0
